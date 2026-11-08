@@ -47,49 +47,72 @@
   .bev.fl, .bev.bl { left: calc(var(--b) * -0.2071 - var(--e)); }
   .bev.fr, .bev.br { left: calc(100% - var(--b) * 1.2071 - var(--e)); }
   .bev.fl { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(-45deg); background: linear-gradient(90deg, #19191b, #222225 55%, #1c1c1e); }
-  .bev.bl { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(-135deg); background: linear-gradient(90deg, #1c1c1e, #222225 45%, #19191b); }
+  .bev.bl { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(-135deg);
+    background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,.32) 50%, rgba(255,255,255,.12)), #232327; }
   .bev.fr { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(45deg);
-    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.05)), #161618; }
+    background: linear-gradient(90deg, rgba(255,255,255,.24), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.1)), #1d1d21; }
   .bev.br { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(135deg);
-    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.2) 55%, rgba(255,255,255,.1)), #161618; }
+    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.32) 50%, rgba(255,255,255,.16)), #232327; }
   .side-l, .side-r { width: calc(var(--t) - 2 * var(--b) + 2 * var(--e)); }
   .side-l { left: calc((var(--t) - 2 * var(--b)) / -2 - var(--e)); transform: rotateY(-90deg); }
   .side-r { left: calc(100% - (var(--t) - 2 * var(--b)) / 2 - var(--e)); transform: rotateY(90deg); }
   .face.top-f, .face.bot-f { left: 0; width: 100%; height: var(--t);
     clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b)), 0 var(--b)); }
-  .face.top-f { top: calc(var(--t) / -2); transform: rotateX(90deg);
-    background: linear-gradient(0deg, rgba(255,255,255,.3), rgba(255,255,255,.08) 7%, rgba(255,255,255,.05) 15%, #000 15% 17%, rgba(255,255,255,.2) 17% 19.5%, rgba(255,255,255,.06) 22%, rgba(255,255,255,.04) 92%, rgba(255,255,255,.14)), #111113; }
-  .face.bot-f { top: calc(var(--s) - var(--t) / 2); transform: rotateX(-90deg);
-    background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06) 7%, rgba(255,255,255,.04) 15%, #000 15% 17%, rgba(255,255,255,.14) 17% 19.5%, rgba(255,255,255,.04) 22%, rgba(255,255,255,.03) 92%, rgba(255,255,255,.1)), #0c0c0e; }
+  .face.top-f { top: calc(var(--t) / -2); transform: rotateX(90deg); }
+  .face.bot-f { top: calc(var(--s) - var(--t) / 2); transform: rotateX(-90deg); }
+  /* Ober-/Unterkante (nach Foto): glatte klare Streifen von Deckel und Boden, dazwischen geriffelt,
+     zwei rechteckige Aussparungen und der runde Scharnier-Zapfen an der Scharnier-Seite */
+  .top-f, .bot-f { background: #1b1b1f; overflow: hidden; }
+  .eb { position: absolute; left: 0; right: 0; height: 18%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.18) 1px, rgba(255,255,255,.1)), #2a2a2f; }
+  .top-f .eb.k, .bot-f .eb.f { top: 0; }
+  .top-f .eb.f, .bot-f .eb.k { bottom: 0; transform: scaleY(-1); }
+  .ribz { position: absolute; left: 0; right: 0; top: 18%; bottom: 18%;
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,.24) 0 1px, rgba(255,255,255,.06) 1px 2px, rgba(0,0,0,0) 2px 3px), #222226; }
+  .notch { position: absolute; top: 24%; height: 32%; background: repeating-linear-gradient(180deg, rgba(255,255,255,.3) 0 1px, rgba(0,0,0,.45) 1px 3px), #141417;
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3); }
+  .notch.n1 { left: 14%; width: 7%; } .notch.n2 { left: 73%; width: 6%; }
+  .pivot { position: absolute; left: 3%; width: 9%; top: 18%; height: 64%; border-radius: 0 0 50% 50% / 0 0 100% 100%;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,.26) 0 1px, rgba(0,0,0,.4) 1px 3px), #131316; }
+  .bot-f .notch { top: auto; bottom: 24%; }
+  .bot-f .pivot { top: auto; bottom: 18%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
 
   /* ---------- Vorderseite: klarer Deckel über schwarzem Träger ---------- */
   .lid { position: absolute; inset: 0; overflow: hidden; border-radius: 1px; background: #0b0b0c; }
   .tray { position: absolute; inset: 0; background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
   /* geriffelter schwarzer Rand am Scharnier: matt, spiegelt nicht, keine Kratzer */
-  .ribs { position: absolute; left: 0; top: 0; bottom: 0; width: 8%;
+  .ribs { position: absolute; left: .6%; top: 1.2%; bottom: 1.2%; width: 7.8%; border-radius: calc(var(--s) * .008);
     background: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,.12) 1px 2px, rgba(0,0,0,0) 2px 3px),
       linear-gradient(90deg, #232326, #1b1b1d 60%, #1f1f22);
     box-shadow: inset -1px 0 0 rgba(0,0,0,.65); }
   /* Booklet: Papier, nie ganz gerade eingelegt und nie ganz flach */
-  .booklet { position: absolute; top: 2.3%; bottom: 2.3%; right: 2.6%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat;
+  .booklet { position: absolute; top: 2%; bottom: 2%; right: 3.6%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat;
     box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7);
     transform: translate(var(--ox, 0), var(--oy, 0)) rotate(var(--rot, 0deg)); }
   .booklet::after { content: ""; position: absolute; inset: 0;
     background: linear-gradient(165deg, rgba(255,255,255,.06), rgba(255,255,255,0) 35%, rgba(0,0,0,.05) 70%, rgba(0,0,0,.13)),
       linear-gradient(90deg, rgba(0,0,0,.22), rgba(0,0,0,0) 2.5%);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
-  /* Halte-Nasen im Deckel, die das Booklet festhalten */
-  .tab { position: absolute; width: 2.2%; height: 8%; border-radius: 1px;
-    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.17)); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.34), 0 0 1.5px rgba(0,0,0,.6); }
-  .tab.r1 { right: 1.2%; top: 10%; } .tab.r2 { right: 1.2%; bottom: 10%; }
-  .tab.l1 { left: 9.2%; top: 10%; } .tab.l2 { left: 9.2%; bottom: 10%; }
+  /* Ränder des Deckels (nach Foto): dicke, klare Kante mit Glanz- und Brechungslinien */
+  .rim-t, .rim-b { position: absolute; left: 0; right: 0; height: 2%; }
+  .rim-t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .rim-b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .rim-l { position: absolute; left: 0; top: 0; bottom: 0; width: .6%; background: linear-gradient(90deg, rgba(255,255,255,.45), rgba(255,255,255,.1)); }
+  /* rechte Deckelkante: Schatten neben dem Booklet, runder Glanz-Wulst, feine dunkle Linie, klarer Außenrand */
+  .rim-r { position: absolute; right: 0; top: 0; bottom: 0; width: 3.6%;
+    background: linear-gradient(90deg, rgba(0,0,0,.85) 0 22%, rgba(255,255,255,.08) 22%, rgba(255,255,255,var(--lip, .35)) 42%, rgba(255,255,255,.1) 60%,
+      rgba(0,0,0,.75) 60% 70%, rgba(255,255,255,.12) 70%, rgba(255,255,255,.42) 100%), #121214; }
+  /* Stufe im Deckel zwischen geriffeltem Rand und Booklet */
+  .step { position: absolute; left: 8.4%; width: 1.1%; top: 0; bottom: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.32) 25%, rgba(0,0,0,.4) 45%, rgba(255,255,255,.24) 65%, rgba(255,255,255,.03)); }
+  /* runde Halte-Nasen rechts am Booklet */
+  .ring { position: absolute; right: 2.75%; width: 1.7%; aspect-ratio: 1; border-radius: 50%; margin-top: -.85%;
+    border: 1.5px solid rgba(225,225,232,.8); background: rgba(255,255,255,.1); box-shadow: 0 0 2px rgba(0,0,0,.7), inset 0 0 1px rgba(0,0,0,.6); }
+  .ring.a { top: 40%; } .ring.b { top: 76%; }
+  .lid::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); pointer-events: none; }
 
   /* Glanzschicht des klaren Plastiks – nur über dem klaren Teil, nicht über dem matten Rand */
-  .gloss { position: absolute; top: 0; bottom: 0; left: 8%; right: 0; overflow: hidden; pointer-events: none; }
+  .gloss { position: absolute; top: 0; bottom: 0; left: 8.4%; right: 0; overflow: hidden; pointer-events: none; }
   .gloss.bk { left: 0; right: 0; }
-  .lip { position: absolute; left: 0; right: 0; height: 1.3%; }
-  .lip.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)); box-shadow: 0 .5px 0 rgba(255,255,255,.18); }
-  .lip.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); box-shadow: 0 -.5px 0 rgba(255,255,255,.14); }
   .sheen { position: absolute; inset: 0;
     background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.15) 43%, rgba(255,255,255,.055) 49%, rgba(255,255,255,0) 57%);
     background-size: 320% 100%; background-position: var(--sx, 50%) 0; }
@@ -105,44 +128,63 @@
   .crack path { fill: none; stroke: rgba(255,255,255,.55); stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
   .spot { position: absolute; inset: 0;
     background: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), rgba(255,255,255,.2), rgba(255,255,255,.05) 22%, rgba(255,255,255,0) 42%); }
-  .rim { position: absolute; inset: 0;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.22), inset 0 0 0 2px rgba(0,0,0,.3), inset 0 1px 0 1px rgba(255,255,255,.14); }
 
   /* ---------- Seiten: Deckelkante, Schlitz, klarer Boden mit dem Rücken des Einlegers ---------- */
   .side { overflow: hidden; background: #0d0d0e; }
   /* Rücken = linker (bzw. rechter) Streifen vom Cover, über die ganze Höhe */
-  .side .inlay { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  .side .inlay { position: absolute; top: 2.4%; bottom: 2.4%; display: flex; align-items: center; justify-content: center; overflow: hidden;
     background: var(--img) 0 50% / auto 100% no-repeat, #2c2c2e; }
-  .side-l .inlay { left: 3%; right: 15%; }
-  .side-r .inlay { left: 19%; right: 3%; background-position: 100% 50%; }
+  .side-l .inlay { left: 18%; right: 15%; }
+  .side-r .inlay { left: 15%; right: 20%; background-position: 100% 50%; }
+  /* klare Bodenplatte (hinten), von der Kante gesehen – hell, weil dickes Klarplastik */
+  .side .plate { position: absolute; top: 0; bottom: 0; }
+  .side-l .plate { left: 0; width: 18%; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.26) 55%, rgba(255,255,255,.08)), #26262b; }
+  .side-r .plate { right: 0; width: 20%; background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.26) 55%, rgba(255,255,255,.08)), #26262b; }
+  /* klare Eck-Blöcke oben und unten */
+  .side .cap { position: absolute; left: 0; right: 0; height: 2.4%;
+    background: linear-gradient(180deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.24) 60%, rgba(0,0,0,.5)), #2a2a2f; }
+  .side .cap.t { top: 0; } .side .cap.b { bottom: 0; transform: scaleY(-1); }
   .spine { writing-mode: vertical-rl; transform: rotate(180deg); font-size: calc(var(--t) * .34); font-weight: 700; letter-spacing: .08em;
     color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
   .spine.r { transform: none; }
   .side .lidedge { position: absolute; top: 0; bottom: 0; }
   /* Scharnier-Seite: matt schwarz wie der geriffelte Rand */
-  .side-l .lidedge { right: 0; width: 13%; background: repeating-linear-gradient(270deg, rgba(255,255,255,.04) 0 1px, rgba(0,0,0,0) 1px 3px), linear-gradient(270deg, #222225, #1a1a1c 60%, #1f1f21); }
+  .side-l .lidedge { right: 0; width: 15%; background: repeating-linear-gradient(270deg, rgba(255,255,255,.04) 0 1px, rgba(0,0,0,0) 1px 3px), linear-gradient(270deg, #222225, #1a1a1c 60%, #1f1f21); }
   /* Öffnungs-Seite: klare Deckelkante */
-  .side-r .lidedge { left: 0; width: 17%; background: linear-gradient(90deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12)), #141416; }
+  .side-r .lidedge { left: 0; width: 15%; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.06) 1px, rgba(255,255,255,var(--lip, .3)) 40%, rgba(255,255,255,.05) 70%, rgba(0,0,0,.5)), #141417; }
   /* Schlitz zwischen Deckel und Boden – hier öffnet man die Hülle */
   .side .seam { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #000; }
-  .side-l .seam { right: 13%; box-shadow: -1px 0 0 rgba(255,255,255,.3), 1px 0 0 rgba(0,0,0,.4); }
-  .side-r .seam { left: 17%; box-shadow: 1px 0 0 rgba(255,255,255,.38), -1px 0 0 rgba(255,255,255,.24); }
+  .side-l .seam { right: 15%; box-shadow: -1px 0 0 rgba(255,255,255,.3), 1px 0 0 rgba(0,0,0,.4); }
+  .side-r .seam { left: 15%; box-shadow: 1px 0 0 rgba(255,255,255,.38), -1px 0 0 rgba(255,255,255,.24); }
   /* klare Plastikwand: helle Brechungskanten, Licht wandert mit */
   .side .wall { position: absolute; top: 0; bottom: 0; left: 0; right: 0; pointer-events: none;
     background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,0) 7%, rgba(255,255,255,0) 93%, rgba(255,255,255,.12)),
       linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,0) 4%, rgba(255,255,255,0) 96%, rgba(255,255,255,.08)),
       linear-gradient(180deg, rgba(255,255,255,0) 15%, rgba(255,255,255,var(--sl, .06)) 50%, rgba(255,255,255,0) 85%);
     box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); }
-  .side-l .wall { right: 13%; }
+  /* Kratzer auf dem Klarplastik der Seite (wie auf dem Foto) */
+  .side .wall::after { content: ""; position: absolute; inset: 0; background: var(--tex) 0 0 / 150px 150px; opacity: calc(var(--sk, .9) * .5); }
+  .side-l .wall { right: 15%; }
 
   /* ---------- Rückseite: Einleger mit Titelliste hinter dem klaren Boden ---------- */
   .back { overflow: hidden; border-radius: 1px; background: #0b0b0c; }
   /* Einleger: 138 × 118 mm im 142 × 125 mm großen Boden */
-  .bk-inlay { position: absolute; left: 1.4%; right: 1.4%; top: 2.8%; bottom: 2.8%; overflow: hidden; color: #fff; letter-spacing: 0;
+  .bk-inlay { position: absolute; left: 1.9%; right: 1.9%; top: 3%; bottom: 3%; overflow: hidden; color: #fff; letter-spacing: 0;
     background: linear-gradient(180deg, rgba(8,8,10,.6), rgba(8,8,10,.8)), var(--img) 35% 45% / 280% auto no-repeat, #1c1c1e;
     box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7); }
   /* echter Scan aus dem Cover Art Archive: Mitte = Rückseite, die Rücken werden abgeschnitten */
   .jc.has-scan .bk-inlay { background: var(--scan) 50% 50% / var(--bks, cover) no-repeat, #1c1c1e; }
+  /* klarer Rahmen des Bodens (nach Foto): helle Außenkante, dunkle Brechungslinie, kleine Noppen */
+  .bk-rim { position: absolute; pointer-events: none; }
+  .bk-rim.t, .bk-rim.b { left: 0; right: 0; height: 3%; }
+  .bk-rim.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .bk-rim.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .bk-rim.l, .bk-rim.r { top: 0; bottom: 0; width: 1.9%; }
+  .bk-rim.l { left: 0; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .bk-rim.r { right: 0; background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+  .bk-nub { position: absolute; top: .8%; width: 2.2%; height: 1.1%; border-radius: 1px; background: rgba(255,255,255,.22); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.4); }
+  .bk-nub.lo { top: auto; bottom: .8%; }
+  .bk-dot { position: absolute; left: .5%; top: 47%; width: .9%; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.35); }
   .bk-gen { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 5.5% 6% 4%; }
   .jc.has-scan .bk-gen { visibility: hidden; background: rgba(8,8,10,.86); }
   .jc.has-scan.show-list .bk-gen { visibility: visible; }
@@ -167,7 +209,7 @@
   .barcode { display: block; width: calc(var(--s) * .17); height: calc(var(--s) * .075); border: calc(var(--s) * .008) solid #fff;
     background: repeating-linear-gradient(90deg, #111 0 1px, #fff 1px 2px, #111 2px 4px, #fff 4px 5px, #111 5px 6px, #fff 6px 8px, #111 8px 9px, #fff 9px 11px); }
   /* Rücken aus dem Scan: rechter Streifen = Scharnier-Seite, linker Streifen = Öffnungs-Seite */
-  .jc.has-spine .side .inlay { top: 2.8%; bottom: 2.8%; background: var(--scan) 100% 50% / var(--spw) 100% no-repeat, #2c2c2e; }
+  .jc.has-spine .side .inlay { top: 2.4%; bottom: 2.4%; background: var(--scan) 100% 50% / var(--spw) 100% no-repeat, #2c2c2e; }
   .jc.has-spine .side-r .inlay { background-position: 0 50%; }
   .jc.has-spine .spine { display: none; }
 
@@ -294,6 +336,7 @@ function wearTexture(seed) {
   return c.toDataURL('image/png');
 }
 const TEX = scratchTexture();
+document.documentElement.style.setProperty('--tex', `url(${TEX})`);
 const WEAR = [11, 23, 37].map(wearTexture);
 // feiner Haarriss am Scharnier (klassischer Jewel-Case-Schaden) – nur bei manchen Hüllen
 const CRACK = `<svg class="crack" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -302,10 +345,10 @@ const CRACK = `<svg class="crack" viewBox="0 0 100 100" preserveAspectRatio="non
 // Glanzschicht: Licht, Kratzer, Abrieb
 function gloss(seed, cls, crack) {
   return `<div class="gloss ${cls}">
-    <div class="lip t"></div><div class="lip b"></div><div class="sheen"></div><div class="uneven"></div>
+    <div class="sheen"></div><div class="uneven"></div>
     <div class="scratch" style="background-image:url(${TEX});--tx:${(seed * 137) % 340}px;--ty:${(seed * 211) % 340}px"></div>
     <div class="wear" style="background-image:url(${WEAR[seed % 3]})"></div>
-    ${crack ? CRACK : ''}<div class="spot"></div><div class="rim"></div>
+    ${crack ? CRACK : ''}<div class="spot"></div>
   </div>`;
 }
 
@@ -314,16 +357,17 @@ function frontHtml(a, i, full) {
   const r = rng(i * 7 + 3);
   const rot = ((r() - 0.5) * 0.7).toFixed(2), ox = ((r() - 0.5) * 1.2).toFixed(2), oy = ((r() - 0.5) * 1.2).toFixed(2);
   return `<div class="face front"><div class="lid">
-    <div class="tray"></div><div class="ribs"></div>
+    <div class="tray"></div><div class="rim-t"></div><div class="rim-b"></div><div class="rim-l"></div><div class="rim-r"></div>
+    <div class="ribs"></div><div class="step"></div>
     <div class="booklet" style="background-image:url('${cover(a, 500)}');--rot:${rot}deg;--ox:${ox}px;--oy:${oy}px"></div>
-    <div class="tab r1"></div><div class="tab r2"></div><div class="tab l1"></div><div class="tab l2"></div>
+    <div class="ring a"></div><div class="ring b"></div>
     ${full ? gloss(i, '', i % 4 === 2) : ''}
   </div></div>`;
 }
 function sideHtml(a, which, full) {
   return `<div class="face side side-${which}">
     <div class="inlay"><span class="spine${which === 'r' ? ' r' : ''}">Green Day · ${a[0]}</span></div>
-    <div class="lidedge"></div><div class="seam"></div>
+    <div class="plate"></div><div class="lidedge"></div><div class="seam"></div><div class="cap t"></div><div class="cap b"></div>
     ${full ? '<div class="wall"></div>' : ''}
   </div>`;
 }
@@ -335,9 +379,12 @@ function backHtml(a, i, full) {
       <ol class="${cols === 2 ? 'two' : ''}" style="--rows:${rows}">${TRACKS.map((t, k) => `<li><b>${k + 1}</b>${t}</li>`).join('')}</ol>
       <div class="bk-foot"><i class="barcode"></i><span>℗ ${a[1]} Green Day</span></div></div>` : ''}
     </div>
-    ${full ? gloss(i + 5, 'bk', false) + `<div class="bk-btns"><span class="bk-btn list" data-btn="list">${LIST}</span><span class="bk-btn play" data-btn="play">${PLAY}</span></div>` : ''}
+    ${full ? BK_RIM + gloss(i + 5, 'bk', false) + `<div class="bk-btns"><span class="bk-btn list" data-btn="list">${LIST}</span><span class="bk-btn play" data-btn="play">${PLAY}</span></div>` : ''}
   </div>`;
 }
+const BK_RIM = '<div class="bk-rim t"></div><div class="bk-rim b"></div><div class="bk-rim l"></div><div class="bk-rim r"></div><div class="bk-dot"></div>'
+  + [12, 30, 52, 70, 88].map((x) => `<i class="bk-nub" style="left:${x}%"></i><i class="bk-nub lo" style="left:${x}%"></i>`).join('');
+const EDGE = '<i class="eb k"></i><i class="ribz"></i><i class="eb f"></i><i class="notch n1"></i><i class="notch n2"></i><i class="pivot"></i>';
 const BEVELS = '<div class="face bev fl"></div><div class="face bev fr"></div><div class="face bev bl"></div><div class="face bev br"></div>';
 
 const stage = document.getElementById('stage');
@@ -345,7 +392,7 @@ stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
   <div class="jc" style="--img:url('${cover(a, 250)}')">
     <div class="core"></div>
     ${frontHtml(a, i, true)}${BEVELS}${sideHtml(a, 'l', true)}${sideHtml(a, 'r', true)}
-    <div class="face top-f"></div><div class="face bot-f"></div>
+    <div class="face top-f">${EDGE}</div><div class="face bot-f">${EDGE}</div>
     ${backHtml(a, i, true)}
     <div class="mirror"><div class="core"></div>${frontHtml(a, i, false)}${BEVELS}${sideHtml(a, 'l', false)}${sideHtml(a, 'r', false)}${backHtml(a, i, false)}</div>
   </div>
@@ -368,6 +415,7 @@ function light(el, k, tilt) {
   el.style.setProperty('--ux', `${(50 + k * 95).toFixed(1)}%`);
   el.style.setProperty('--bvr', (0.12 + 0.42 * Math.max(0, Math.min(1, k))).toFixed(3));
   el.style.setProperty('--sl', (0.03 + 0.12 * Math.min(1, ak)).toFixed(3));
+  el.style.setProperty('--lip', (0.2 + 0.3 * (0.5 + 0.5 * Math.sin(k * 2.2 + 0.6))).toFixed(3)); // Glanz auf den runden Deckelkanten
 }
 
 function layout() {

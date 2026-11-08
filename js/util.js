@@ -64,6 +64,8 @@ const ICONS = {
   play: '<path d="M7 4v16l13 -8z" fill="currentColor"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>',
   prev: '<path d="M6 5v14"/><path d="M19 5l-10 7l10 7z" fill="currentColor"/>',
+  volLow: '<path d="M4 9.5h3l4.5 -4v13l-4.5 -4h-3z" fill="currentColor"/><path d="M15 10a3 3 0 0 1 0 4"/>',
+  volHigh: '<path d="M3 9.5h3l4.5 -4v13l-4.5 -4h-3z" fill="currentColor"/><path d="M14 10a3 3 0 0 1 0 4M16.5 7.5a6.5 6.5 0 0 1 0 9M19 5a10 10 0 0 1 0 14"/>',
   next: '<path d="M18 5v14"/><path d="M5 5l10 7l-10 7z" fill="currentColor"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>',

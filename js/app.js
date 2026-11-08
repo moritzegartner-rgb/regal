@@ -7,7 +7,7 @@ import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.6';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -153,13 +153,13 @@ const albumsLabel = (n) => (n === 1 ? '1 Album' : `${n} Alben`);
 const chev = () => icon('chevron', 16, 'cell-chev');
 
 // Kopfzeile wie in iOS: schwebende Glas-Knöpfe oben, großer Titel darunter
-function header(title, { back = false, left = '', actions = '', compact = false } = {}) {
+function header(title, { back = false, left = '', actions = '', compact = false, center = null } = {}) {
   const leftHtml = back
     ? `<button class="glass-btn round" data-action="back" aria-label="Zurück">${icon('back', 24)}</button>`
     : left;
   return `<div class="navbar ${compact ? 'compact' : ''}">
     <div class="nav-side">${leftHtml}</div>
-    <div class="nav-title">${esc(title)}</div>
+    <div class="nav-title">${center ?? esc(title)}</div>
     <div class="nav-side right">${actions}</div>
   </div>
   ${compact ? '' : `<h1 class="large-title">${esc(title)}</h1>`}`;
@@ -253,6 +253,31 @@ function render() {
   else location.replace('#/');
 }
 
+// Seitenwechsel mit Animation wie in iOS: tiefer = neue Seite schiebt sich von rechts herein,
+// zurück = die Seite gleitet nach rechts weg und die vorige kommt von links zurück.
+// Tiefe: Start 0 · Alben eines Interpreten / Menü 1 · Listen 2 · Interpretenseite 3
+function depthOf([page, id]) {
+  if (page === '') return 0;
+  if (page === 'flow' || page === 'menu') return 1;
+  if (page === 'interpreten' && id) return 3;
+  return 2;
+}
+let shownRoute = null;
+
+function navigate() {
+  const next = route();
+  const prev = shownRoute;
+  shownRoute = next;
+  const a = prev ? depthOf(prev) : 0;
+  const b = depthOf(next);
+  const dir = !prev || a === b ? '' : (b > a ? 'forward' : 'back');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!dir || reduce || !document.startViewTransition) { render(); return; }
+  document.documentElement.dataset.nav = dir;
+  const t = document.startViewTransition(() => render());
+  t.finished.finally(() => { delete document.documentElement.dataset.nav; });
+}
+
 // =====================================================================
 // 1) Durchblättern – Startbildschirm (Interpreten) und Alben eines Interpreten
 // =====================================================================
@@ -303,12 +328,15 @@ function cfRefreshArtist(key) {
 }
 
 function albumEntries(g) {
-  const list = g.items.map((it) => ({ key: it.mbid || it.id, title: it.title, sub: it.year || '', cover: it.cover, item: it, sortYear: it.year || '9999' }));
+  // Interpret steht jetzt unten in der Zeile (oben ist Platz für „Läuft gerade“)
+  const list = g.items.map((it) => ({
+    key: it.mbid || it.id, title: it.title, sub: [g.name, it.year].filter(Boolean).join(' · '), cover: it.cover, item: it, sortYear: it.year || '9999',
+  }));
   const disco = g.mbid && discoMem.get(g.mbid)?.data;
   if (disco) {
     for (const a of studioAlbums(disco)) {
       if (ownedAlbum(a, g.mbid)) continue;
-      list.push({ key: a.mbid, title: a.title, sub: a.year ? `${a.year} · fehlt dir noch` : 'fehlt dir noch', cover: a.cover, missing: true, album: a, sortYear: a.date || '9999' });
+      list.push({ key: a.mbid, title: a.title, sub: [g.name, a.year, 'fehlt'].filter(Boolean).join(' · '), cover: a.cover, missing: true, album: a, sortYear: a.date || '9999' });
     }
   }
   return list.sort((a, b) => a.sortYear.localeCompare(b.sortYear) || collator.compare(a.title, b.title));
@@ -321,15 +349,19 @@ function renderFlow(level, key = '') {
   Object.assign(CF, { level, key, entries, flipped: -1, shown: -1, fast: false });
   if (g) state.current = { kind: 'flow', g };
 
+  // Oben in der Mitte: „Läuft gerade“ (nur wenn ein anderes Album läuft) – sonst bleibt es leer
+  const center = spConnected ? npNowHtml() : '';
   const nav = level === 'artists'
     ? header('', {
       compact: true,
+      center,
       left: `<a class="glass-btn round" href="#/menu" aria-label="Menü">${icon('menu', 22)}</a>`,
       actions: `<button class="glass-btn round" data-action="add-menu" aria-label="CDs hinzufügen">${icon('plus', 24)}</button>`,
     })
-    : header(g.name, {
+    : header('', {
       back: true,
       compact: true,
+      center,
       actions: `<a class="glass-btn round" href="#/interpreten/${enc(g.key)}" aria-label="Als Liste">${icon('list', 22)}</a>`,
     });
 
@@ -352,7 +384,6 @@ function renderFlow(level, key = '') {
           </div>
         </div>`).join('')}
       </div>
-      ${spConnected ? npNowHtml() : ''}
     </div>
     <div class="cf-info">
       <div class="cf-title"><span class="cf-title-text"></span></div>
@@ -794,7 +825,7 @@ let npNow = null; // { albumId, album, artists, artistIds, track, img }
 // Drei kleine Balken wie bei Apple Music (bewegen sich nur, während Musik läuft)
 const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
 
-// „Läuft gerade“-Kapsel: schwebt oben über den Covern, damit der Player unten nie verrutscht
+// „Läuft gerade“-Kapsel: sitzt oben in der Kopfzeile, damit sie nichts verdeckt und nichts verschiebt
 function npNowHtml() {
   return `<button class="np-now glass" data-action="np-goto" hidden>
     <img alt="" hidden><span class="np-now-text"></span>${EQ}
@@ -808,10 +839,60 @@ function npHtml() {
       <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 32)}</button>
       <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 30)}</button>
     </div>
+    <div class="np-vol">
+      <span class="np-vol-ic">${icon('volLow', 18)}</span>
+      <input class="np-range" id="np-vol" type="range" min="0" max="100" step="1" value="50" style="--v:50%" aria-label="Lautstärke">
+      <span class="np-vol-ic">${icon('volHigh', 18)}</span>
+      <span class="np-vol-hint" hidden>Lautstärke über die Tasten am Gerät</span>
+    </div>
   </div>`;
 }
 
+// ---------- Lautstärke ----------
+// Spotify erlaubt das Regeln nur bei manchen Geräten (z. B. Lautsprecher, PC). Das iPhone selbst
+// meldet oft „geht nicht“ – dann erscheint stattdessen ein kurzer Hinweis.
+let npVolBusy = 0; // Zeitpunkt der letzten eigenen Änderung (damit das Nachfragen den Regler nicht zurückspringen lässt)
+let npVolTimer = 0;
+let npDeviceId = '';
+
+function npShowVolume(device) {
+  const box = $('#np .np-vol');
+  if (!box) return;
+  const ok = !!device && device.supports_volume !== false && typeof device.volume_percent === 'number';
+  box.classList.toggle('off', !ok);
+  box.querySelector('.np-vol-hint').hidden = ok || !device;
+  const input = $('#np-vol');
+  if (ok && Date.now() - npVolBusy > 2500) {
+    input.value = device.volume_percent;
+    input.style.setProperty('--v', `${device.volume_percent}%`);
+  }
+}
+
+async function npSendVolume(v) {
+  try {
+    await spotify.setVolume(v, npDeviceId);
+  } catch (e) {
+    if (e.status === 403 || /VOLUME/i.test(e.reason)) {
+      npShowVolume({ supports_volume: false });
+    } else if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
+      toast('Spotify läuft gerade nicht – spiel zuerst ein Album ab.');
+    } else toast(e.message, 'error');
+  }
+}
+
+document.addEventListener('input', (e) => {
+  if (e.target.id !== 'np-vol') return;
+  const v = Number(e.target.value);
+  e.target.style.setProperty('--v', `${v}%`);
+  npVolBusy = Date.now();
+  // beim Ziehen höchstens alle 250 ms an Spotify schicken
+  clearTimeout(npVolTimer);
+  npVolTimer = setTimeout(() => npSendVolume(v), 250);
+});
+
 function npShow(st) {
+  npDeviceId = st?.device?.id || '';
+  npShowVolume(st?.device || null);
   const t = st?.item;
   npNow = t ? {
     albumId: t.album?.id || '',
@@ -1968,7 +2049,7 @@ async function init() {
     toast(`Der Speicher konnte nicht geöffnet werden: ${e.message}`, 'error');
   }
   changed();
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', navigate);
   // Beim Scrollen: kleiner Titel + weicher Glas-Rand oben (wie iOS)
   const onScroll = () => {
     document.body.classList.toggle('scrolled', window.scrollY > 4);
@@ -1977,7 +2058,7 @@ async function init() {
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('hashchange', () => requestAnimationFrame(onScroll));
   // Zurück von der Spotify-Anmeldung? Sonst normal starten
-  if (!(await handleSpotifyCallback())) render();
+  if (!(await handleSpotifyCallback())) { shownRoute = route(); render(); }
   // Wenn die App wieder sichtbar wird (z. B. nach der Anmeldung in Safari): Verbindung neu prüfen
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;

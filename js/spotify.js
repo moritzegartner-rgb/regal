@@ -178,6 +178,7 @@ export const pause = (deviceId) => api('PUT', `/me/player/pause${dev(deviceId)}`
 export const resume = (deviceId) => api('PUT', `/me/player/play${dev(deviceId)}`);
 export const next = (deviceId) => api('POST', `/me/player/next${dev(deviceId)}`);
 export const previous = (deviceId) => api('POST', `/me/player/previous${dev(deviceId)}`);
+export const setVolume = (percent, deviceId) => api('PUT', `/me/player/volume?volume_percent=${Math.round(percent)}${deviceId ? `&device_id=${encodeURIComponent(deviceId)}` : ''}`);
 
 // ---------- Profilbild eines Interpreten ----------
 // Spotify-ID von MusicBrainz (sicherer Treffer) oder Suche nach dem Namen

@@ -821,22 +821,22 @@ body.flow-page::before { display: none; } /* reines Schwarz wie beim iPod */
 .artist-photo img { object-fit: cover; }
 .cover.thumb.round { border-radius: 50%; }
 .cf-stage.with-np {
-  height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 250px);
-  height: calc(100svh - var(--safe-top) - var(--safe-bottom) - 250px);
+  height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 290px);
+  height: calc(100svh - var(--safe-top) - var(--safe-bottom) - 290px);
   min-height: 260px;
 }
 /* Steuerung groß und mittig; „Läuft gerade“ nur, wenn ein anderes Album läuft */
 .np { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 10px 0 0; }
-/* Kapsel schwebt oben über den Covern (verschiebt nichts) */
+/* „Läuft gerade“ sitzt oben in der Kopfzeile zwischen den runden Knöpfen */
 .cf-area { position: relative; }
+.navbar .nav-title { overflow: visible; }
 .np-now {
-  position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 20;
-  display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 24px);
-  padding: 5px 14px 5px 5px; border-radius: 999px; color: var(--text);
+  display: inline-flex; align-items: center; gap: 7px; max-width: min(56vw, 300px);
+  padding: 4px 12px 4px 4px; border-radius: 999px; color: var(--text);
   background: var(--glass-dark);
 }
-.np-now:active { transform: translateX(-50%) scale(0.96); }
-.np-now img { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; flex: none; }
+.np-now:active { transform: scale(0.96); }
+.np-now img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; flex: none; }
 .np-now-text { font-size: 13px; font-weight: 500; letter-spacing: -0.08px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-now .eq { flex: none; }
 .np-controls { display: flex; align-items: center; justify-content: center; gap: 30px; }
@@ -870,6 +870,34 @@ body.np-paused .eq i { animation-play-state: paused; transform: scaleY(0.35); }
 .tracks li.playing .tn b { display: none; }
 .tracks li.playing .tn .eq { display: inline-flex; }
 .tracks li.playing .tt { font-weight: 600; }
+
+/* Lautstärke wie in iOS: schmale Leiste, links leise, rechts laut */
+.np-vol { display: flex; align-items: center; gap: 12px; width: min(100%, 340px); height: 28px; color: var(--muted); }
+.np-vol-ic { display: flex; flex: none; }
+.np-range {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 6px; border-radius: 3px; margin: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92) var(--v, 50%), rgba(120, 120, 128, 0.42) var(--v, 50%));
+}
+.np-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+.np-range::-moz-range-thumb { width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; }
+.np-vol-hint { flex: 1; text-align: center; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); }
+.np-vol.off .np-range, .np-vol.off .np-vol-ic { display: none; }
+
+/* Seitenwechsel wie in iOS (View Transitions): tiefer = von rechts herein, zurück = nach rechts hinaus */
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: 0.45s; animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1); animation-fill-mode: both;
+}
+html[data-nav="forward"]::view-transition-old(root) { animation-name: vt-push-out; }
+html[data-nav="forward"]::view-transition-new(root) { animation-name: vt-push-in; box-shadow: -18px 0 40px rgba(0, 0, 0, 0.6); }
+html[data-nav="back"]::view-transition-old(root) { animation-name: vt-pop-out; z-index: 2; box-shadow: -18px 0 40px rgba(0, 0, 0, 0.6); }
+html[data-nav="back"]::view-transition-new(root) { animation-name: vt-pop-in; }
+@keyframes vt-push-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes vt-push-out { from { transform: none; } to { transform: translateX(-28%); opacity: 0.35; } }
+@keyframes vt-pop-out { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes vt-pop-in { from { transform: translateX(-28%); opacity: 0.35; } to { transform: none; opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

@@ -261,8 +261,10 @@ body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,
 .lid.solid { background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
 .mirror .face::after, .mirror .core::after { content: ""; position: absolute; inset: 0;
   background: linear-gradient(to top, rgba(0,0,0,.56), rgba(0,0,0,.88) 22%, #000 40%); }
-.mirror { transition: opacity .4s; }
-.cf-item.open .mirror { opacity: 0; }
+/* aufgeklappt: keine Spiegelung. Safari ignoriert opacity bei 3D-Gruppen – darum zusätzlich visibility
+   (wird an alle Flächen vererbt). Ausblenden nach dem Verblassen, Einblenden beim Zuklappen sofort. */
+.mirror { transition: opacity .4s, visibility 0s; }
+.cf-item.open .mirror, .cf-item.inner .mirror { opacity: 0; visibility: hidden; transition: opacity .3s, visibility 0s .3s; }
 
 /* ---------- Booklet zum Durchblättern ---------- */
 /* Einblenden: Hintergrund wird dunkel, das Booklet steigt aus der Hülle nach vorne und richtet sich auf */

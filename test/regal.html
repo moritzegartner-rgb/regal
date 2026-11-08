@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Test: Regal</title>
+<!-- Test: Startbildschirm als CD-Regal (angelehnt an das alte iOS-Newsstand).
+     Zwei Ansichten: „Cover“ (Interpreten stehen mit der Vorderseite nach vorn) und „Rücken“ (alle CDs wie im
+     echten Regal, Rücken nach vorn, Regalschilder pro Interpret). Gehört (noch) nicht zur App. -->
+<style>
+  :root { color-scheme: dark; --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: #000; color: #fff;
+    font: 17px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; letter-spacing: -0.43px; }
+  button { font: inherit; }
+
+  /* ---------- Kopfzeile (Glas, wie in der App) ---------- */
+  .bar { position: fixed; z-index: 20; left: 0; right: 0; top: 0; padding: calc(var(--safe-top) + 8px) 12px 8px; display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.25)); -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: 0 .5px 0 rgba(255,255,255,.12); }
+  .bar h1 { flex: 1; margin: 0; text-align: center; font-size: 17px; font-weight: 600; }
+  .round { width: 40px; height: 40px; border-radius: 50%; border: 0; color: #fff; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, rgba(255,255,255,.2), rgba(255,255,255,.07)); box-shadow: inset 0 1px .5px rgba(255,255,255,.45), inset 0 0 0 .5px rgba(255,255,255,.14); }
+  .round svg { width: 22px; height: 22px; }
+
+  /* ---------- Die Regalwand ---------- */
+  .wall { position: relative; min-height: 100vh; padding: calc(var(--safe-top) + 68px) 0 calc(var(--safe-bottom) + 150px);
+    background: linear-gradient(rgba(0,0,0,var(--wallDim)), rgba(0,0,0,var(--wallDim))), var(--wallTex) 0 0 / 512px 512px; }
+  /* Seitenwände links und rechts */
+  .wall::before, .wall::after { content: ""; position: absolute; top: 0; bottom: 0; width: 12px; z-index: 3;
+    background: linear-gradient(90deg, rgba(0,0,0,.35), rgba(255,255,255,.08) 40%, rgba(0,0,0,.3)), var(--boardTex) 0 0 / 512px 512px; }
+  .wall::before { left: 0; box-shadow: 4px 0 10px rgba(0,0,0,.5); }
+  .wall::after { right: 0; box-shadow: -4px 0 10px rgba(0,0,0,.5); }
+  .row { position: relative; padding: 0 20px; }
+  /* Fach: oben Schatten vom Boden darüber, Licht von oben */
+  .row-items { position: relative; display: flex; align-items: flex-end; height: var(--rowH); padding-top: 22px; }
+  .row-items::before { content: ""; position: absolute; left: -20px; right: -20px; top: 0; height: 40px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,0)); }
+  .row-items::after { content: ""; position: absolute; left: -20px; right: -20px; top: 0; bottom: 0; pointer-events: none;
+    background: radial-gradient(70% 90% at 50% 0%, rgba(255,236,200,var(--glow)), rgba(255,236,200,0) 70%); }
+  /* Regalboden: Oberseite (perspektivisch), Vorderkante mit Holzmaserung, Schatten darunter */
+  .board { position: relative; height: 24px; margin: 0 -20px; z-index: 2; }
+  .board .top { position: absolute; left: 0; right: 0; top: 0; height: 8px;
+    background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(255,255,255,.06)), var(--boardTex) 0 0 / 512px 512px; }
+  .board .lip { position: absolute; left: 0; right: 0; top: 8px; height: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,var(--lipHi)) 0 1px, rgba(255,255,255,.05) 1px, rgba(0,0,0,.1) 60%, rgba(0,0,0,.45)), var(--boardTex) 0 37px / 512px 512px;
+    box-shadow: 0 7px 14px rgba(0,0,0,.55), 0 2px 3px rgba(0,0,0,.5); }
+  /* Regalschilder an der Vorderkante */
+  .label { position: absolute; top: 10px; transform: translateX(-50%); max-width: 44%; padding: 1px 7px 2px; border-radius: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font: 600 8.5px/1.3 -apple-system, system-ui, sans-serif; letter-spacing: .03em; text-transform: uppercase;
+    color: var(--labelInk); background: var(--labelBg); box-shadow: 0 1px 1px rgba(0,0,0,.45), inset 0 0 0 .5px rgba(0,0,0,.25); }
+
+  /* ---------- Ansicht „Cover“: Interpreten mit der Vorderseite nach vorn (wie Newsstand) ---------- */
+  .cell { flex: 1; display: flex; justify-content: center; align-items: flex-end; height: 100%; }
+  .stack { position: relative; width: 84%; cursor: pointer; transition: transform .25s; }
+  .stack:active { transform: translateY(-3px) scale(1.03); }
+  .stack .mjc.behind { position: absolute; left: 0; bottom: 0; width: 100%; }
+  .stack .mjc.behind.b1 { transform: translate(7%, -6%); filter: brightness(.62); }
+  .stack .mjc.behind.b2 { transform: translate(14%, -12%); filter: brightness(.42); }
+  /* Kontaktschatten auf dem Boden */
+  .stack::after { content: ""; position: absolute; left: 4%; right: -6%; bottom: -5px; height: 10px; border-radius: 50%;
+    background: radial-gradient(closest-side, rgba(0,0,0,.6), rgba(0,0,0,0)); z-index: -1; }
+
+  /* kleine CD-Hülle von vorn (2D) */
+  .mjc { position: relative; width: 100%; aspect-ratio: 142 / 125; background: #0b0b0c; border-radius: 1.5px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.26), 5px -3px 12px rgba(0,0,0,.45), 0 2px 3px rgba(0,0,0,.6); }
+  .mjc-ribs { position: absolute; left: .6%; top: 1.2%; bottom: 1.2%; width: 7.8%; border-radius: 1px;
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, rgba(0,0,0,.15) 1px 2px, rgba(0,0,0,0) 2px 3px), linear-gradient(90deg, #232326, #1b1b1d); }
+  .mjc.clear .mjc-ribs { background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.03)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
+  .mjc-bk { position: absolute; top: 2%; bottom: 2%; right: 3.6%; aspect-ratio: 1; background: #1c1c1e 50% 50% / cover no-repeat; box-shadow: 0 0 0 .5px rgba(0,0,0,.6); }
+  .mjc-bk.text { display: flex; align-items: center; justify-content: center; padding: 8%; text-align: center; font-weight: 700; font-size: 12px; line-height: 1.1;
+    background: linear-gradient(160deg, #2c2c2e, #0b0b0c); }
+  .mjc-glass { position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.06) 22%, rgba(255,255,255,0) 40%, rgba(255,255,255,0) 70%, rgba(255,255,255,.08) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset -2px 0 0 rgba(255,255,255,.12); }
+
+  /* ---------- Ansicht „Rücken“: alle CDs wie im echten Regal ---------- */
+  .row.spines .row-items { gap: 0; }
+  .sp { position: relative; flex: none; width: var(--spW); height: var(--spH); margin-right: 1px; background: #0d0d0e; cursor: pointer; border-radius: 1px;
+    box-shadow: 1px 0 1px rgba(0,0,0,.6); transition: transform .3s cubic-bezier(.3,.8,.3,1), box-shadow .3s; }
+  .sp.gap { margin-left: 12px; } /* Abstand zwischen zwei Interpreten */
+  .sp i { position: absolute; display: block; }
+  .sp .plate { left: 0; top: 0; bottom: 0; width: 21%; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.26) 55%, rgba(255,255,255,.08)), #26262b; }
+  .sp .inl { left: 21%; right: 2.5%; top: 2.4%; bottom: 2.4%; overflow: hidden; display: flex; align-items: center; justify-content: center;
+    background: #2c2c2e 0 50% / auto 100% no-repeat; }
+  .sp .inl span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 700; font-size: calc(var(--spW) * .42); letter-spacing: .06em;
+    text-transform: uppercase; color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); }
+  .sp.scan .inl span { display: none; }
+  .sp .seam { right: 0; top: 0; bottom: 0; width: 1.5px; background: #000; box-shadow: -1px 0 0 rgba(255,255,255,.3); }
+  .sp .cap { left: 0; right: 0; height: 2.4%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.24) 60%, rgba(0,0,0,.5)), #2a2a2f; }
+  .sp .cap.t { top: 0; } .sp .cap.b { bottom: 0; transform: scaleY(-1); }
+  /* klares Plastik: Glanzstreifen entlang der Hülle */
+  .sp .gl { inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,0) 30%, rgba(255,255,255,0) 70%, rgba(255,255,255,.12)),
+      linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,0) 18%, rgba(255,255,255,0) 82%, rgba(0,0,0,.25)); }
+  .sp:active, .sp.out { transform: translateY(-10px) scale(1.06); box-shadow: 0 8px 18px rgba(0,0,0,.7); z-index: 5; }
+
+  /* ---------- Herausnehmen: CD/Interpret kommt nach vorn ---------- */
+  .dim { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.72); opacity: 0; transition: opacity .45s; }
+  .dim.on { opacity: 1; }
+  .fly { position: fixed; left: 0; top: 0; z-index: 31; transform-origin: 0 0; perspective: 1200px; pointer-events: none; }
+  .fly-in { position: absolute; inset: 0; transform-style: preserve-3d; }
+  .fly .mjc { position: absolute; inset: 0; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+  .fly .sp { position: absolute; top: 0; height: 100%; margin: 0; transition: none; box-shadow: none; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+  .pick-info { position: fixed; z-index: 32; left: 0; right: 0; text-align: center; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .pick-info.on { opacity: 1; }
+  .pick-info b { display: block; font-size: 20px; font-weight: 600; }
+  .pick-info span { display: block; font-size: 15px; color: rgba(235,235,245,.6); }
+  .pick-info small { display: block; margin-top: 10px; font-size: 13px; color: rgba(235,235,245,.45); }
+
+  /* ---------- Test-Bedienung unten ---------- */
+  .opts { position: fixed; z-index: 25; left: 0; right: 0; bottom: 0; padding: 26px 0 calc(var(--safe-bottom) + 12px); display: flex; flex-direction: column; align-items: center; gap: 8px;
+    background: linear-gradient(0deg, rgba(0,0,0,.9) 55%, rgba(0,0,0,0)); }
+  .optrow { display: flex; align-items: center; gap: 8px; }
+  .optrow small { width: 54px; text-align: right; font-size: 13px; color: rgba(235,235,245,.6); }
+  .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: linear-gradient(180deg, rgba(40,40,44,.9), rgba(20,20,22,.9)); box-shadow: inset 0 1px .5px rgba(255,255,255,.35), inset 0 0 0 .5px rgba(255,255,255,.12); }
+  .seg button { border: 0; background: none; color: rgba(235,235,245,.6); font-weight: 600; font-size: 15px; padding: 8px 15px; border-radius: 999px; }
+  .seg button.on { background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.14)); color: #fff; }
+  .src { position: relative; z-index: 4; padding: 18px 24px 0; text-align: center; font-size: 12px; color: rgba(255,255,255,.55); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button class="round" aria-label="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <h1>Regal</h1>
+  <button class="round" aria-label="Hinzufügen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+</div>
+<div class="wall" id="wall"></div>
+<div class="opts">
+  <div class="optrow"><small>Ansicht</small><div class="seg" id="view"><button data-v="cover" class="on">Cover</button><button data-v="spines">Rücken</button></div></div>
+  <div class="optrow"><small>Regal</small><div class="seg" id="wood"><button data-v="oak" class="on">Holz</button><button data-v="walnut">Nuss</button><button data-v="black">Schwarz</button></div></div>
+</div>
+<script type="module">
+import { getCache, getSetting, db } from '../js/db.js';
+import * as jewel from '../js/jewel.js';
+
+// Beispiel-Sammlung (nur wenn in diesem Browser keine eigene Sammlung gespeichert ist)
+const DEMO = [{"name": "AC/DC", "mbid": "66c662b6-6e2f-4930-8610-912e24c63ed1", "albums": [{"t": "High Voltage", "y": "1975", "id": "2b81e645-4586-4456-843a-9bc19a217470"}, {"t": "Highway to Hell", "y": "1979", "id": "f85647ec-a69b-3b0a-ad04-bb6076c4dcf1"}, {"t": "Blow Up Your Video", "y": "1988", "id": "baab9433-37a8-32ee-a1d3-34c7d6cf6e69"}]}, {"name": "Beatsteaks", "mbid": "a9b88ebb-83aa-4ef7-b674-fabeb572c14e", "albums": [{"t": "48/49", "y": "1997", "id": "ee3266d3-e5aa-330b-909c-4bee920c848d"}, {"t": "Smack Smash", "y": "2004", "id": "dcb8966b-fc70-3f4b-a6e3-18873526acc2"}, {"t": "Boombox", "y": "2011", "id": "f5c1c72b-86e8-44bc-a6d9-2c72ebab6ede"}]}, {"name": "Billie Eilish", "mbid": "f4abc0b5-3f7a-4eff-8f78-ac078dbce533", "albums": [{"t": "WHEN WE ALL FALL ASLEEP, WHERE DO WE GO?", "y": "2019", "id": "72375978-a9a1-4254-b957-85565c716b7e"}, {"t": "Happier Than Ever", "y": "2021", "id": "3ac5236a-3bd8-44c6-ab60-69b013594ae6"}, {"t": "HIT ME HARD AND SOFT", "y": "2024", "id": "02a544b3-0459-42c7-bd9c-047162e7b67a"}]}, {"name": "blink‐182", "mbid": "0743b15a-3c32-48c8-ad58-cb325350befa", "albums": [{"t": "Cheshire Cat", "y": "1995", "id": "0a467c9c-c9f7-3a86-bce1-c013e3bacd5f"}, {"t": "Take Off Your Pants and Jacket", "y": "2001", "id": "e9acecde-4ae1-3430-baf7-eae53cb9d75f"}, {"t": "California", "y": "2016", "id": "986ceaa4-3a6e-4ec8-acb9-79d3110fc94b"}]}, {"name": "Die Ärzte", "mbid": "f2fb0ff0-5679-42ec-a55c-15109ce6e320", "albums": [{"t": "Debil", "y": "1984", "id": "26535caf-778b-3392-bbf6-ff16a712bbcb"}, {"t": "Das ist nicht die ganze Wahrheit …", "y": "1988", "id": "33b626b4-dc26-3dde-add7-6daa558f77fd"}, {"t": "Le Frisur", "y": "1996", "id": "7388f7e7-090b-3f9f-aad9-154d45b10115"}, {"t": "5, 6, 7, 8 - Bullenstaat!", "y": "2001", "id": "593a4cad-dc87-3981-9ef7-4847ce3cff15"}, {"t": "Jazz ist anders", "y": "2007", "id": "4890f5c7-389e-380e-99e8-0b2b3cbc9b8f"}]}, {"name": "Foo Fighters", "mbid": "67f66c07-6e61-4026-ade5-7e782fad3a5d", "albums": [{"t": "Foo Fighters", "y": "1995", "id": "440c9ce8-8ce4-3103-a745-0b385ae70a34"}, {"t": "In Your Honor", "y": "2005", "id": "304479f9-ea77-3299-8745-3985f05cfa13"}, {"t": "Concrete and Gold", "y": "2017", "id": "e0335c44-58cd-433c-86d3-e114b14b7111"}]}, {"name": "Green Day", "mbid": "084308bd-1654-436f-ba03-df6697104e19", "albums": [{"t": "Kerplunk!", "y": "1991", "id": "a0603694-2422-3a40-b946-d0bcea5e8254"}, {"t": "Dookie", "y": "1994", "id": "314cffd4-daa5-3337-85e5-e54165a96113"}, {"t": "Insomniac", "y": "1995", "id": "061f572e-7660-3c6b-b4cd-cf66d46da93c"}, {"t": "nimrod.", "y": "1997", "id": "4f1d08f2-d4bd-3ef2-ba72-eb348ae4c332"}, {"t": "Warning:", "y": "2000", "id": "c1604b20-37b8-3fc7-8726-73f41090b8e2"}, {"t": "American Idiot", "y": "2004", "id": "de9bf827-a9b0-348b-a7c9-556c03c3fb07"}, {"t": "21st Century Breakdown", "y": "2009", "id": "37608ff2-3168-3e7c-a77e-04a4b7300c1b"}]}, {"name": "Linkin Park", "mbid": "f59c5520-5f46-4d2c-b2c4-822eabf53419", "albums": [{"t": "Hybrid Theory", "y": "2000", "id": "b5b4bb4b-8ba5-3acf-88cb-4cae2699d8da"}, {"t": "Minutes to Midnight", "y": "2007", "id": "a4201f5c-f0d7-319c-ba9d-ba0bac38da7a"}, {"t": "Living Things", "y": "2012", "id": "af682b63-021e-4806-afac-9aa4380fc6bd"}, {"t": "One More Light", "y": "2017", "id": "b976c959-d13e-487c-85d7-cab70ed7c842"}]}, {"name": "Metallica", "mbid": "65f4f0c5-ef9e-490c-aee3-909e7ae6b2ab", "albums": [{"t": "Kill ’Em All", "y": "1983", "id": "f44f4f73-a714-31a1-a4b8-bfcaaf311f50"}, {"t": "Metallica", "y": "1991", "id": "e8f70201-8899-3f0c-9e07-5d6495bc8046"}, {"t": "Death Magnetic", "y": "2008", "id": "5c8a25bf-4764-3cce-8f37-30af79d3b101"}]}, {"name": "Muse", "mbid": "9c9f1380-2516-4fc9-a3e6-f9f61941d090", "albums": [{"t": "Showbiz", "y": "1999", "id": "a842d860-a023-3a71-ad2e-a3a94cffabd7"}, {"t": "Black Holes and Revelations", "y": "2006", "id": "af2e8e23-e9c3-4e67-8ad8-66387c5898fd"}, {"t": "Drones", "y": "2015", "id": "3133d4d5-5cfb-4f53-87f5-f3a97c8f310d"}]}, {"name": "Nirvana", "mbid": "5b11f4ce-a62d-471e-81fc-a69a8278c7da", "albums": [{"t": "Bleach", "y": "1989", "id": "f1afec0b-26dd-3db5-9aa1-c91229a74a24"}, {"t": "Nevermind", "y": "1991", "id": "1b022e01-4da6-387b-8658-8678046e4cef"}, {"t": "In Utero", "y": "1993", "id": "2a0981fb-9593-3019-864b-ce934d97a16e"}]}, {"name": "The Offspring", "mbid": "23a03e33-a603-404e-bcbf-2c00159d7067", "albums": [{"t": "The Offspring", "y": "1989", "id": "9eb1feb7-393b-34f3-865e-5e3bdaf1186a"}, {"t": "Ixnay on the Hombre", "y": "1997", "id": "8ef7ac07-793a-3aab-b14a-45f0c1ec4a2b"}, {"t": "Splinter", "y": "2003", "id": "2302fb6c-540b-4d16-a82f-e55821a2f23c"}]}, {"name": "Radiohead", "mbid": "a74b1b7f-71a5-4011-9441-d0b5e4122711", "albums": [{"t": "Pablo Honey", "y": "1993", "id": "cd76f76b-ff15-3784-a71d-4da3078a6851"}, {"t": "Kid A", "y": "2000", "id": "e75c0549-ad55-39e3-8025-c72c5d4a3c5d"}, {"t": "In Rainbows", "y": "2007", "id": "6e335887-60ba-38f0-95af-fae7774336bf"}]}, {"name": "Rammstein", "mbid": "b2d122f9-eadb-4930-a196-8f221eeb0c66", "albums": [{"t": "Herzeleid", "y": "1995", "id": "806eb9e1-06c6-385e-bf04-f3c5e2b4a6be"}, {"t": "Mutter", "y": "2001", "id": "833a9e1a-62c0-32f6-ab47-7797c4d83b07"}, {"t": "Rosenrot", "y": "2005", "id": "15e65e08-85d1-3145-85b2-e18b9fbd4cba"}]}, {"name": "Red Hot Chili Peppers", "mbid": "8bfac288-ccc5-448d-9573-c33ea2aa5c30", "albums": [{"t": "The Red Hot Chili Peppers", "y": "1984", "id": "cb453955-e748-31c2-91e6-db01681886a5"}, {"t": "Mother’s Milk", "y": "1989", "id": "a73f5707-e5a3-3dbd-94b3-bd84ccc828d8"}, {"t": "Californication", "y": "1999", "id": "ca5dfcc3-83fb-3eee-9061-c27296b77b2c"}, {"t": "I’m With You", "y": "2011", "id": "c9ffebc3-0e00-4ba7-bef6-980c98d623b6"}]}, {"name": "Wir sind Helden", "mbid": "908fedf4-548a-430f-b806-38fca9507dc4", "albums": [{"t": "Die Reklamation", "y": "2003", "id": "edc9b7d3-b026-3287-a85b-a604a4922760"}, {"t": "Von hier an blind", "y": "2005", "id": "3991fa25-cc26-34da-a011-56d9cc68fead"}, {"t": "Soundso", "y": "2007", "id": "20f6b3c3-0e90-377d-b2bc-cc30df297179"}]}];
+const cover = (id, px = 250) => `https://coverartarchive.org/release-group/${id}/front-${px}`;
+const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
+const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ---------- Daten: eigene Sammlung (gleiche Adresse wie die App) oder Beispiel ----------
+async function loadArtists() {
+  try {
+    const items = (await db.all('items')).filter((i) => i.type === 'cd');
+    const map = new Map();
+    for (const it of items) {
+      const key = it.artistMbid ? `mb:${it.artistMbid}` : `name:${norm(it.artist) || 'unbekannt'}`;
+      if (!map.has(key)) map.set(key, { key, name: it.artistName || it.artist || 'Unbekannt', albums: [] });
+      map.get(key).albums.push({ t: it.title, y: it.year || '', id: it.mbid || '', cover: it.cover || '' });
+    }
+    if (map.size >= 6) {
+      const list = [...map.values()];
+      for (const a of list) {
+        const pic = (await getCache(`spimg:${a.key}`))?.data;
+        a.img = pic?.big || pic?.img || '';
+      }
+      return { list, mine: true };
+    }
+  } catch {}
+  return { list: DEMO.map((a) => ({ key: `mb:${a.mbid}`, name: a.name, img: '', albums: a.albums.map((b) => ({ ...b, cover: cover(b.id) })) })), mine: false };
+}
+
+// ---------- Holzmaserung (einmal erzeugt, nahtlos kachelbar) ----------
+function rng(seed) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function woodTexture(seed, base, dark, light, vertical) {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), r = rng(seed);
+  g.fillStyle = base; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 170; i++) { // Jahresringe als wellige Linien
+    const y0 = r() * S, amp = 1.5 + r() * 7, k1 = 1 + Math.floor(r() * 3), k2 = 3 + Math.floor(r() * 5), ph = r() * 6.28;
+    g.strokeStyle = r() < 0.65 ? dark : light;
+    g.globalAlpha = 0.06 + r() * 0.28;
+    g.lineWidth = 0.6 + r() * 2.4;
+    for (const off of [-S, 0, S]) {
+      g.beginPath();
+      for (let x = 0; x <= S; x += 8) {
+        const y = y0 + off + Math.sin(x / S * 6.283 * k1 + ph) * amp + Math.sin(x / S * 6.283 * k2 + ph * 2) * amp * 0.25;
+        if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+  }
+  for (let i = 0; i < 5000; i++) { // Poren
+    g.globalAlpha = r() * 0.12;
+    g.fillStyle = r() < 0.5 ? dark : light;
+    g.fillRect(r() * S, r() * S, 1 + r() * 2, 1);
+  }
+  g.globalAlpha = 1;
+  if (!vertical) return c.toDataURL('image/jpeg', 0.85);
+  const v = document.createElement('canvas'); v.width = v.height = S;
+  const h = v.getContext('2d'); h.translate(S, 0); h.rotate(Math.PI / 2); h.drawImage(c, 0, 0);
+  return v.toDataURL('image/jpeg', 0.85);
+}
+const WOODS = {
+  oak: { base: '#b98352', dark: '#6e4423', light: '#dcab76', wallDim: 0.28, glow: 0.16, lipHi: 0.35, labelBg: '#efe7d4', labelInk: '#3a2a18' },
+  walnut: { base: '#5b3b26', dark: '#2a190e', light: '#80583b', wallDim: 0.35, glow: 0.12, lipHi: 0.25, labelBg: '#e9e0cc', labelInk: '#2e2116' },
+  black: { base: '#19191b', dark: '#000000', light: '#3b3b40', wallDim: 0.25, glow: 0.07, lipHi: 0.3, labelBg: '#2a2a2e', labelInk: '#e8e8ea' },
+};
+const texCache = {};
+function setWood(name) {
+  const w = WOODS[name];
+  if (!texCache[name]) texCache[name] = { board: woodTexture(7, w.base, w.dark, w.light, false), wall: woodTexture(11, w.base, w.dark, w.light, true) };
+  const st = document.documentElement.style;
+  st.setProperty('--boardTex', `url(${texCache[name].board})`);
+  st.setProperty('--wallTex', `url(${texCache[name].wall})`);
+  st.setProperty('--wallDim', w.wallDim); st.setProperty('--glow', w.glow); st.setProperty('--lipHi', w.lipHi);
+  st.setProperty('--labelBg', w.labelBg); st.setProperty('--labelInk', w.labelInk);
+}
+
+// ---------- Bauteile ----------
+let CLEAR = false;
+const mjc = (img, name, cls = '') => `<div class="mjc ${CLEAR ? 'clear' : ''} ${cls}"><i class="mjc-ribs"></i>
+  ${img ? `<i class="mjc-bk" style="background-image:url('${esc(img)}')"></i>` : `<i class="mjc-bk text">${esc(name)}</i>`}<i class="mjc-glass"></i></div>`;
+const board = (labels) => `<div class="board"><div class="top"></div><div class="lip">${labels}</div></div>`;
+
+let ARTISTS = [], VIEW = 'cover', SRC = '';
+const wall = document.getElementById('wall');
+
+function renderCover() {
+  const W = wall.clientWidth - 40;
+  const cols = Math.max(3, Math.floor(W / 125));
+  const itemW = W / cols * 0.84;
+  const rowH = Math.round(itemW * 125 / 142 + 34); // Platz für den Stapel nach oben
+  let html = '';
+  for (let r = 0; r < ARTISTS.length; r += cols) {
+    const part = ARTISTS.slice(r, r + cols);
+    const cells = part.map((a, k) => {
+      const albums = a.albums;
+      const front = a.img || albums[albums.length - 1]?.cover || '';
+      const behind = albums.filter((b) => b.cover && b.cover !== front).slice(-2).reverse();
+      return `<div class="cell"><div class="stack" data-a="${r + k}">
+        ${behind[1] ? mjc(behind[1].cover, '', 'behind b2') : ''}${behind[0] ? mjc(behind[0].cover, '', 'behind b1') : ''}
+        ${mjc(front, a.name)}</div></div>`;
+    });
+    while (cells.length < cols) cells.push('<div class="cell"></div>');
+    const labels = part.map((a, k) => `<span class="label" style="left:calc(20px + ${((k + 0.5) / cols * 100).toFixed(2)}% - ${((k + 0.5) / cols * 40).toFixed(1)}px)">${esc(a.name)}</span>`).join('');
+    html += `<div class="row" style="--rowH:${rowH}px"><div class="row-items">${cells.join('')}</div>${board(labels)}</div>`;
+  }
+  wall.innerHTML = html + `<div class="src">${esc(SRC)}</div>`;
+  fixCovers();
+}
+
+// Cover, die es im Archiv nicht gibt: das nächste Album des Interpreten nehmen
+function fixCovers() {
+  wall.querySelectorAll('.stack').forEach((st) => {
+    const a = ARTISTS[st.dataset.a];
+    if (a.img) return;
+    const bk = st.querySelector('.mjc:not(.behind) .mjc-bk');
+    const cands = a.albums.map((b) => b.cover).filter(Boolean).reverse();
+    const tryNext = (k) => {
+      if (k >= cands.length) return;
+      const im = new Image();
+      im.onload = () => { if (k > 0 && bk.isConnected) bk.style.backgroundImage = `url('${cands[k]}')`; a.okCover = cands[k]; };
+      im.onerror = () => tryNext(k + 1);
+      im.src = cands[k];
+    };
+    tryNext(0);
+  });
+}
+
+function renderSpines() {
+  const W = wall.clientWidth - 40;
+  const spH = Math.round(Math.max(150, Math.min(230, innerHeight * 0.25)));
+  const spW = Math.round(spH * 0.083 * 10) / 10; // Rücken: 10,4 × 125 mm
+  const step = spW + 1, gap = 12;
+  wall.style.setProperty('--spW', `${spW}px`);
+  wall.style.setProperty('--spH', `${spH}px`);
+  // Reihen füllen: ein Interpret beginnt eine neue Reihe, wenn er nicht mehr ganz hineinpasst
+  const rows = [];
+  let row = { items: [], labels: [], x: 0 };
+  ARTISTS.forEach((a, ai) => {
+    const need = a.albums.length * step + (row.items.length ? gap : 0);
+    if (row.items.length && row.x + need > W) { rows.push(row); row = { items: [], labels: [], x: 0 }; }
+    let segStart = row.x + (row.items.length ? gap : 0), first = true;
+    a.albums.forEach((b, bi) => {
+      if (row.x + step + (first && row.items.length ? gap : 0) > W && row.items.length) { // passt nicht mehr: in der nächsten Reihe weiter
+        row.labels.push({ name: a.name, x: (segStart + row.x) / 2, w: row.x - segStart });
+        rows.push(row); row = { items: [], labels: [], x: 0 }; segStart = 0; first = true;
+      }
+      const g = first && row.items.length;
+      row.items.push(`<div class="sp${g ? ' gap' : ''}" data-a="${ai}" data-b="${bi}"><i class="plate"></i>
+        <i class="inl" style="background-image:url('${esc(b.cover)}')"><span>${esc(a.name)} · ${esc(b.t)}</span></i>
+        <i class="seam"></i><i class="cap t"></i><i class="cap b"></i><i class="gl"></i></div>`);
+      row.x += step + (g ? gap : 0);
+      first = false;
+    });
+    row.labels.push({ name: a.name, x: (segStart + row.x) / 2, w: row.x - segStart });
+  });
+  if (row.items.length) rows.push(row);
+  wall.innerHTML = rows.map((r) => `<div class="row spines" style="--rowH:${spH + 22}px"><div class="row-items">${r.items.join('')}</div>
+    ${board(r.labels.map((l) => `<span class="label" style="left:${(l.x + 20).toFixed(1)}px;max-width:${Math.max(40, l.w + 10).toFixed(0)}px">${esc(l.name)}</span>`).join(''))}</div>`).join('')
+    + `<div class="src">${esc(SRC)}</div>`;
+  loadSpineScans();
+}
+
+// echte Rücken aus dem Cover Art Archive (oben zuerst; einmal gefunden, merkt sich die App das)
+let scanRun = 0;
+async function loadSpineScans() {
+  const run = ++scanRun;
+  for (const el of wall.querySelectorAll('.sp')) {
+    if (run !== scanRun) return;
+    const b = ARTISTS[el.dataset.a].albums[el.dataset.b];
+    if (!b.id) continue;
+    const sc = await jewel.findScan(b.id).catch(() => null);
+    if (run !== scanRun || !sc || !(sc.ratio > 1.22)) continue;
+    const total = 118 * sc.ratio, f = Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total));
+    const inl = el.querySelector('.inl');
+    inl.style.backgroundImage = `url("${sc.small}")`;
+    inl.style.backgroundSize = `${(100 / f).toFixed(1)}% 100%`;
+    inl.style.backgroundPosition = '100% 50%';
+    el.classList.add('scan');
+  }
+}
+
+function render() { if (VIEW === 'cover') renderCover(); else renderSpines(); }
+
+// ---------- Antippen: Interpret / CD kommt aus dem Regal nach vorn ----------
+let picked = null;
+function flyCard(fromRect, toRect, html, fromDeg, toDeg, ms = 750) {
+  const f = document.createElement('div');
+  f.className = 'fly';
+  f.style.width = `${toRect.width}px`; f.style.height = `${toRect.height}px`;
+  f.innerHTML = `<div class="fly-in">${html}</div>`;
+  const inner = f.firstElementChild;
+  const at = (r) => `translate(${r.left.toFixed(1)}px,${r.top.toFixed(1)}px) scale(${(r.width / toRect.width).toFixed(4)},${(r.height / toRect.height).toFixed(4)})`;
+  f.style.transform = at(fromRect); inner.style.transform = `rotateY(${fromDeg}deg)`;
+  document.body.appendChild(f);
+  f.getBoundingClientRect();
+  f.style.transition = `transform ${ms}ms cubic-bezier(.3,.75,.25,1)`;
+  inner.style.transition = `transform ${ms}ms cubic-bezier(.45,.1,.3,1)`;
+  f.style.transform = at(toRect); inner.style.transform = `rotateY(${toDeg}deg)`;
+  return new Promise((res) => setTimeout(() => res(f), ms + 30));
+}
+async function pick(el, a, b) {
+  if (picked) return;
+  const from = el.getBoundingClientRect();
+  const W = Math.min(innerWidth * 0.78, 340), H = W * 125 / 142;
+  const to = { left: (innerWidth - W) / 2, top: innerHeight * 0.42 - H / 2, width: W, height: H };
+  const dim = document.createElement('div'); dim.className = 'dim'; document.body.appendChild(dim);
+  const info = document.createElement('div'); info.className = 'pick-info'; info.style.top = `${to.top + H + 22}px`;
+  info.innerHTML = b
+    ? `<b>${esc(b.t)}</b><span>${esc(a.name)}${b.y ? ` · ${esc(b.y)}` : ''}</span><small>In der App: Album auswählen (umdrehen, aufklappen …)<br>Antippen daneben legt es zurück</small>`
+    : `<b>${esc(a.name)}</b><span>${a.albums.length} ${a.albums.length === 1 ? 'Album' : 'Alben'}</span><small>In der App: die Alben dieses Interpreten<br>Antippen daneben stellt ihn zurück</small>`;
+  document.body.appendChild(info);
+  const img = b ? b.cover.replace('/front-250', '/front-500') : (a.img || a.okCover || a.albums[a.albums.length - 1]?.cover || '');
+  // Rücken: die Hülle ist eine kleine 3D-Box (Vorderseite + Rücken) und dreht sich beim Herausnehmen nach vorn
+  const T = H * 0.083;
+  const html = mjc(img, a.name) + (b ? `<div class="${el.className.replace(/\bout\b/, '')} fly-side" style="--spW:${T}px;width:${T}px;left:${W - T / 2}px;transform:translateZ(${-T / 2}px) rotateY(90deg)">${el.innerHTML}</div>` : '');
+  el.style.visibility = 'hidden';
+  requestAnimationFrame(() => dim.classList.add('on'));
+  const f = await flyCard(startRect(from, W, H, !!b), to, html, b ? -84 : 0, 0);
+  info.classList.add('on');
+  picked = { el, f, dim, info, from, to, b, W, H };
+}
+// Startstellung: bei Rücken so groß, dass die gedrehte Hülle genau dort steht, wo ihr Rücken im Regal steht
+function startRect(r, W, H, spine) {
+  if (!spine) return r;
+  const s = r.height / H;
+  return { left: r.left + r.width / 2 - W * s / 2, top: r.top, width: W * s, height: r.height };
+}
+async function putBack() {
+  if (!picked) return;
+  const { el, f, dim, info, b, W, H } = picked;
+  picked = null;
+  info.remove();
+  dim.classList.remove('on');
+  const from = startRect(el.getBoundingClientRect(), W, H, !!b);
+  const inner = f.firstElementChild;
+  f.style.transform = `translate(${from.left.toFixed(1)}px,${from.top.toFixed(1)}px) scale(${(from.width / parseFloat(f.style.width)).toFixed(4)},${(from.height / parseFloat(f.style.height)).toFixed(4)})`;
+  inner.style.transform = `rotateY(${b ? -84 : 0}deg)`;
+  await new Promise((r) => setTimeout(r, 780));
+  el.style.visibility = '';
+  f.remove(); dim.remove();
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.opts, .bar')) return;
+  if (picked) { putBack(); return; }
+  const st = e.target.closest('.stack');
+  if (st) { const a = ARTISTS[st.dataset.a]; pick(st.querySelector('.mjc:not(.behind)'), a, null); return; }
+  const sp = e.target.closest('.sp');
+  if (sp) { const a = ARTISTS[sp.dataset.a]; pick(sp, a, a.albums[sp.dataset.b]); }
+});
+
+// ---------- Test-Bedienung ----------
+function seg(id, fn) {
+  document.getElementById(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.toggle('on', x === b));
+    fn(b.dataset.v);
+  });
+}
+seg('view', (v) => { VIEW = v; render(); scrollTo(0, 0); });
+seg('wood', (v) => setWood(v));
+addEventListener('resize', () => render());
+
+setWood('oak');
+jewel.initJewel();
+CLEAR = (await getSetting('caseType', 'classic').catch(() => 'classic')) === 'clear';
+const data = await loadArtists();
+ARTISTS = data.list.sort((a, b) => collator.compare(sortName(a.name), sortName(b.name)));
+ARTISTS.forEach((a) => a.albums.sort((x, y) => (x.y || '9999').localeCompare(y.y || '9999')));
+SRC = data.mine ? 'Deine Sammlung' : 'Beispiel-Sammlung – auf diesem Gerät ist keine eigene Sammlung gespeichert';
+render();
+</script>
+</body>
+</html>

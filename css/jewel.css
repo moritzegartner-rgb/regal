@@ -304,8 +304,12 @@ body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,
 .booklet-name { font: 700 calc(var(--s) * .11) / 1.05 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
   letter-spacing: -0.02em; color: #fff; text-align: center; word-break: break-word;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-/* fehlende Alben: Booklet grau und dunkel */
-.cf-item.missing .booklet, .cf-item.missing .bk-inlay { filter: grayscale(1) brightness(.55); }
+/* fehlende Alben: alles Bedruckte grau und dunkel – Booklet, Rückseite, Rücken, Innenseite, CD */
+.cf-item.missing .booklet, .cf-item.missing .bk-inlay, .cf-item.missing .side .inlay, .cf-item.missing .floor,
+.cf-item.missing .iwall, .cf-item.missing .disc, .cf-item.missing .bpage { filter: grayscale(1) brightness(.55); }
+.cf-item.missing .lid.solid { filter: grayscale(1); }
+/* Booklet eines fehlenden Albums ebenfalls grau */
+.bv.gray .pg { filter: grayscale(1); }
 /* echte Titelliste auf der Rückseite – jeder Titel lässt sich antippen */
 .jc-tracks { flex: 1; min-height: 0; margin: calc(var(--s) * .03) 0 0; padding: 0; list-style: none; overflow: hidden;
   --lh: calc(var(--s) * .58 / var(--rows, 12)); font-size: min(calc(var(--s) * .043), calc(var(--lh) * .72)); line-height: var(--lh); color: rgba(255,255,255,.92); }

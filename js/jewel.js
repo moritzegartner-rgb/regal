@@ -389,10 +389,11 @@ function bvInit() {
 }
 export const bookletOpen = () => !!bv && !bv.hidden;
 
-export async function openBooklet(sc, front) {
+export async function openBooklet(sc, front, gray = false) {
   bvInit();
   const tok = ++bvTok;
   bv.hidden = false;
+  bv.classList.toggle('gray', !!gray); // fehlendes Album: Booklet grau
   bv.classList.remove('ready');
   bvBook.innerHTML = '';
   requestAnimationFrame(() => requestAnimationFrame(() => { if (tok === bvTok) bv.classList.add('show'); }));

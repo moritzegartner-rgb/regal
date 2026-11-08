@@ -5,9 +5,10 @@ import { db, getSetting, setSetting, getCache, setCache } from './db.js';
 import * as mb from './musicbrainz.js';
 import * as gemini from './gemini.js';
 import * as art from './artistart.js';
+import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -454,16 +455,16 @@ function cfUnflip() {
 function cfBackHtml(i, det, err) {
   const e = CF.entries[i];
   const artist = state.current?.g?.name || '';
-  const l = spotifyLinks(artist, e.title, det?.spotify);
+  const sp = { artist, title: e.title, sid: det?.spotify || '' };
   let list = '<p class="hint"><span class="spinner small"></span> Lade Titel …</p>';
-  if (det) list = tracksHtml(det);
+  if (det) list = tracksHtml(det, sp);
   else if (err) list = `<p class="hint">${esc(err)}</p>`;
   const wished = e.missing && isWished(`mb:${e.album.mbid}`);
   return `<div class="cf-back-head">
       <div class="cf-back-titles"><b>${esc(e.title)}</b><span>${esc(artist)}</span></div>
       ${e.missing ? `<button class="cf-round ${wished ? 'on' : ''}" data-action="cf-wish" data-i="${i}" aria-label="Wunschliste">${icon('heart', 18)}</button>` : ''}
       <button class="cf-round" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>
-      <a class="cf-play" href="${esc(l.app)}" aria-label="In Spotify öffnen">${icon('play', 20)}</a>
+      <button class="cf-play" ${spData(sp)} data-action="sp-play" aria-label="Abspielen">${icon('play', 20)}</button>
     </div>
     <div class="cf-back-list">${list}</div>`;
 }
@@ -755,16 +756,64 @@ const fmtDur = (ms) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-function tracksHtml(det) {
+// Album-Infos für die Spotify-Knöpfe als data-Attribute
+const spData = (sp) => `data-artist="${esc(sp.artist)}" data-title="${esc(sp.title)}" data-sid="${esc(sp.sid || '')}"`;
+
+// Titelliste – jeder Titel lässt sich antippen und startet ab dort (mit Spotify-Verbindung)
+function tracksHtml(det, sp) {
   const discs = det?.discs || [];
   const all = discs.flatMap((d) => d.tracks);
   if (!all.length) return '<p class="hint">Keine Titelliste gefunden.</p>';
   const multi = discs.length > 1;
   const total = all.reduce((s, t) => s + (t.ms || 0), 0);
+  let pos = 0;
   return discs.map((d) => `
     ${multi ? `<h4 class="disc-title">CD ${d.n}${d.title ? ` – ${esc(d.title)}` : ''}</h4>` : ''}
-    <ol class="tracks">${d.tracks.map((t) => `<li><span class="tn">${esc(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
+    <ol class="tracks">${d.tracks.map((t) => `<li data-action="sp-track" ${spData(sp)} data-track="${esc(t.title)}" data-pos="${pos++}">
+      <span class="tn">${esc(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
     + `<p class="tracks-foot">${all.length} Titel${total ? `, ${Math.round(total / 60000)} Minuten` : ''}</p>`;
+}
+
+// Abspielen: mit Spotify-Verbindung im Hintergrund (Spotify Connect), sonst die Spotify-App öffnen
+let spConnected = false;
+
+async function spotifyPlay({ artist, title, sid, track = '', pos = -1 }) {
+  if (!spConnected) {
+    location.href = spotifyLinks(artist, title, sid).app;
+    return;
+  }
+  toast(track ? `„${track}“ wird gestartet …` : 'Wird gestartet …');
+  let albumId = sid;
+  try {
+    if (!albumId) albumId = await spotify.findAlbum(artist, title);
+    if (!albumId) throw new Error('Das Album wurde bei Spotify nicht gefunden.');
+    let offset;
+    if (track) {
+      try {
+        const list = await spotify.albumTracks(albumId);
+        const t = list.find((x) => norm(x.name) === norm(track)) || list.find((x) => norm(x.name).startsWith(norm(track)));
+        offset = t ? { uri: t.uri } : { position: Math.max(0, pos) };
+      } catch {
+        offset = { position: Math.max(0, pos) };
+      }
+    }
+    const device = await spotify.pickDevice();
+    if (!device) {
+      toast('Spotify läuft gerade nicht – die App wird geöffnet.');
+      location.href = `spotify:album:${albumId}`;
+      return;
+    }
+    await spotify.play({ deviceId: device.id, contextUri: `spotify:album:${albumId}`, offset });
+    toast(`Läuft auf ${device.name}`);
+  } catch (e) {
+    if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
+      toast('Spotify läuft gerade nicht – die App wird geöffnet.');
+      location.href = albumId ? `spotify:album:${albumId}` : spotifyLinks(artist, title, '').app;
+      return;
+    }
+    if (e instanceof spotify.NotConnected) spConnected = false;
+    toast(e.message, 'error');
+  }
 }
 
 function albumSectionHtml() {
@@ -780,8 +829,11 @@ async function fillAlbumSection(root, a) {
   if (!actions || !box) return;
   const showLinks = (spotifyId) => {
     const l = spotifyLinks(a.artist, a.title, spotifyId);
-    actions.innerHTML = `<a class="btn primary" href="${esc(l.app)}">${icon('play', 18)} In Spotify öffnen</a>
-      <a class="sub-link" href="${esc(l.web)}" target="_blank" rel="noopener">${l.exact ? 'Spotify im Browser öffnen' : 'Kein direkter Link – öffnet die Spotify-Suche'}</a>`;
+    const sp = { artist: a.artist, title: a.title, sid: spotifyId || '' };
+    actions.innerHTML = `<button class="btn primary" data-action="sp-play" ${spData(sp)}>${icon('play', 18)} ${spConnected ? 'Abspielen' : 'In Spotify öffnen'}</button>
+      ${spConnected
+    ? '<span class="sub-link">Spielt über Spotify im Hintergrund · Titel antippen startet ab dort</span>'
+    : `<a class="sub-link" href="${esc(l.web)}" target="_blank" rel="noopener">${l.exact ? 'Spotify im Browser öffnen' : 'Kein direkter Link – öffnet die Spotify-Suche'}</a>`}`;
   };
   showLinks(null);
   if (!a.mbid) { box.innerHTML = '<p class="hint">Keine Titelliste – ordne das Album über „Treffer ändern“ zu.</p>'; return; }
@@ -789,7 +841,7 @@ async function fillAlbumSection(root, a) {
     const det = await loadAlbumDetails(a.mbid);
     if (!root.isConnected) return;
     showLinks(det?.spotify);
-    box.innerHTML = tracksHtml(det);
+    box.innerHTML = tracksHtml(det, { artist: a.artist, title: a.title, sid: det?.spotify || '' });
   } catch (e) {
     if (root.isConnected) box.innerHTML = `<p class="hint error">${esc(e.message)}</p>`;
   }
@@ -1342,10 +1394,28 @@ async function renderSettings() {
   const chosen = await getSetting('geminiModel', 'auto');
   const persisted = navigator.storage?.persisted ? await navigator.storage.persisted().catch(() => false) : false;
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const spUser = await getSetting('spUser', '');
+  const spClient = await getSetting('spClientId', '');
   if (route()[0] !== 'einstellungen') return;
   const cellIc = (name) => `<span class="cell-ic">${icon(name, 18)}</span>`;
+  const spGroup = spConnected
+    ? `<div class="cell">${cellIc('play')}<span class="cell-label">Spotify</span><span class="cell-value">${spUser ? `Verbunden: ${esc(spUser)}` : 'Verbunden'}</span></div>
+      <label class="cell"><span class="cell-label">Abspielen auf</span>
+        <select id="sp-device" class="cell-select"><option value="">Automatisch</option></select>${chev()}</label>
+      <button class="cell action danger" data-action="sp-disconnect"><span class="cell-label">Verbindung trennen</span></button>`
+    : `<div class="cell">${cellIc('play')}<span class="cell-label">Spotify</span><span class="cell-value">Nicht verbunden</span></div>
+      <div class="cell input-cell"><input id="sp-client" placeholder="Client ID einfügen" value="${esc(spClient)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <button class="cell action" data-action="sp-connect"><span class="cell-label">Mit Spotify verbinden</span>${chev()}</button>
+      <div class="cell input-cell"><input id="sp-code" placeholder="Verbindungs-Code einfügen" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <button class="cell action" data-action="sp-code"><span class="cell-label">Code übernehmen</span></button>
+      <button class="cell action" data-action="sp-help"><span class="cell-label">So richtest du es ein</span>${chev()}</button>`;
   view().innerHTML = `
     ${header('Einstellungen', { back: true })}
+
+    <h3 class="group-title">Spotify</h3>
+    <div class="group">${spGroup}</div>
+    <div id="sp-status" class="group-footer status-line"></div>
+    <p class="group-footer">Mit Spotify Premium spielt Regal Alben und einzelne Titel im Hintergrund ab – ohne dass die Spotify-App aufgeht. Spotify muss dafür auf dem iPhone irgendwann geöffnet worden sein.</p>
 
     <h3 class="group-title">Fotoerkennung</h3>
     <div class="group">
@@ -1397,6 +1467,7 @@ async function renderSettings() {
 
     <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive · Logos: TheAudioDB</p>`;
   $('#gem-model').addEventListener('change', (e) => setSetting('geminiModel', e.target.value));
+  if (spConnected) fillSpDevices();
   $('#opt-live').addEventListener('change', async (e) => {
     state.includeLive = e.target.checked;
     await setSetting('includeLive', state.includeLive);
@@ -1406,6 +1477,74 @@ async function renderSettings() {
     e.target.value = '';
     if (f) await importBackup(f);
   });
+}
+
+// ---------- Spotify verbinden ----------
+async function fillSpDevices() {
+  const sel = $('#sp-device');
+  if (!sel) return;
+  const pref = await getSetting('spDevice', '');
+  try {
+    const list = await spotify.devices();
+    sel.innerHTML = `<option value="">Automatisch</option>${list.map((d) => `<option value="${esc(d.id)}" ${d.id === pref ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}`;
+    if (pref && !list.some((d) => d.id === pref)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(pref)}" selected>Zuletzt gewähltes Gerät</option>`);
+    if (!spUserKnown) {
+      spUserKnown = true;
+      const name = await spotify.me().catch(() => '');
+      if (name) await setSetting('spUser', name);
+    }
+  } catch (e) {
+    const st = $('#sp-status');
+    if (st) st.innerHTML = `<span class="error">${esc(e.message)}</span>`;
+  }
+  sel.onchange = () => setSetting('spDevice', sel.value);
+}
+let spUserKnown = false;
+
+function showSpotifyHelp() {
+  openSheet(`<h2>Spotify einrichten</h2>
+    <div class="help">
+      <p>Einmalig, dauert etwa 5 Minuten. Du brauchst Spotify Premium.</p>
+      <ol>
+        <li>Öffne <a class="inline-link" href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> und melde dich mit deinem Spotify-Konto an.</li>
+        <li>Tippe auf <b>„Create app“</b>. Name: <i>Regal</i>, Beschreibung: <i>Meine CD-Sammlung</i>.</li>
+        <li>Bei <b>„Redirect URIs“</b> genau diese Adresse eintragen und „Add“ tippen:<br><code>${esc(spotify.redirectUri())}</code></li>
+        <li>Bei „Which API/SDKs“ <b>„Web API“</b> ankreuzen, Bedingungen bestätigen, <b>„Save“</b>.</li>
+        <li>In der neuen App auf <b>„Settings“</b> → die <b>Client ID</b> kopieren.</li>
+        <li>Hier in Regal einfügen → <b>„Mit Spotify verbinden“</b> → anmelden → zustimmen.</li>
+        <li>Zeigt Safari danach einen <b>Verbindungs-Code</b>: kopieren, zurück in Regal, bei „Verbindungs-Code einfügen“ einfügen → „Code übernehmen“.</li>
+      </ol>
+    </div>`);
+}
+
+async function handleSpotifyCallback() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('state') || (!q.has('code') && !q.has('error'))) return false;
+  history.replaceState(null, '', `${location.pathname}#/spotify`);
+  document.body.classList.remove('flow-page');
+  view().innerHTML = `${header('Spotify')}<div id="sp-cb"><p class="hint"><span class="spinner small"></span> Verbindung wird hergestellt …</p></div>`;
+  const box = $('#sp-cb');
+  if (q.get('error')) {
+    box.innerHTML = `<p class="hint error">Spotify hat die Verbindung nicht erlaubt (${esc(q.get('error'))}).</p><a class="btn" href="#/einstellungen">Zurück</a>`;
+    return true;
+  }
+  try {
+    const code = await spotify.finishLogin(q.get('code'), q.get('state'));
+    spConnected = true;
+    const name = await spotify.me().catch(() => '');
+    if (name) await setSetting('spUser', name);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    box.innerHTML = standalone
+      ? `<div class="empty">${icon('check', 46)}<h2>Mit Spotify verbunden</h2><a class="btn primary" href="#/einstellungen">Weiter</a></div>`
+      : `<div class="notice">${icon('check', 24)}<div><b>Fast geschafft!</b>
+          <p>Kopiere den Verbindungs-Code, wechsle zurück in die Regal-App auf deinem Home-Bildschirm und füge ihn unter Einstellungen → Spotify bei „Verbindungs-Code einfügen“ ein.</p></div></div>
+        <textarea class="code-box" readonly>${esc(code)}</textarea>
+        <button class="btn primary" data-action="sp-copy" data-code="${esc(code)}">Code kopieren</button>
+        <p class="group-footer">Benutzt du Regal hier im Browser, bist du schon verbunden – dann einfach <a class="inline-link" href="#/einstellungen">weiter</a>.</p>`;
+  } catch (e) {
+    box.innerHTML = `<p class="hint error">${esc(e.message)}</p><a class="btn" href="#/einstellungen">Zurück</a>`;
+  }
+  return true;
 }
 
 async function saveGemini() {
@@ -1587,6 +1726,48 @@ const actions = {
   'wish-remove': async (el) => { await removeWish(el.dataset.key); renderWishes(); },
 
   'save-gemini': () => saveGemini(),
+
+  // Spotify
+  'sp-play': (el) => spotifyPlay({ artist: el.dataset.artist, title: el.dataset.title, sid: el.dataset.sid }),
+  'sp-track': (el) => spotifyPlay({
+    artist: el.dataset.artist, title: el.dataset.title, sid: el.dataset.sid, track: el.dataset.track, pos: Number(el.dataset.pos),
+  }),
+  'sp-connect': async () => {
+    const cid = $('#sp-client').value.trim();
+    if (!/^[0-9a-f]{32}$/i.test(cid)) { toast('Füge zuerst die Client ID von Spotify ein (32 Zeichen).'); return; }
+    await setSetting('spClientId', cid);
+    location.href = await spotify.authorizeUrl(cid);
+  },
+  'sp-code': async () => {
+    const st = $('#sp-status');
+    st.innerHTML = '<span class="spinner small"></span> Prüfe den Code …';
+    try {
+      await spotify.useConnectCode($('#sp-code').value);
+      spConnected = true;
+      spUserKnown = false;
+      toast('Mit Spotify verbunden');
+      renderSettings();
+    } catch (e) {
+      st.innerHTML = `<span class="error">${esc(e.message)}</span>`;
+    }
+  },
+  'sp-disconnect': async () => {
+    if (!confirm('Die Verbindung zu Spotify trennen?')) return;
+    await spotify.disconnect();
+    spConnected = false;
+    renderSettings();
+  },
+  'sp-copy': async (el) => {
+    try {
+      await navigator.clipboard.writeText(el.dataset.code);
+      toast('Code kopiert');
+    } catch {
+      const box = $('.code-box');
+      box?.select();
+      toast('Markiert – jetzt über „Kopieren“ kopieren');
+    }
+  },
+  'sp-help': () => showSpotifyHelp(),
   'toggle-key': (el) => { const inp = $(`#${el.dataset.for}`); inp.type = inp.type === 'password' ? 'text' : 'password'; },
   export: () => exportBackup(),
   'clear-all': () => clearAll(),
@@ -1627,6 +1808,7 @@ async function init() {
     state.includeLive = await getSetting('includeLive', false);
     const pending = await getCache('pendingScan');
     if (Array.isArray(pending?.data)) state.scan.rows = pending.data.filter((r) => r.type !== 'dvd');
+    spConnected = await spotify.isConnected();
   } catch (e) {
     toast(`Der Speicher konnte nicht geöffnet werden: ${e.message}`, 'error');
   }
@@ -1639,7 +1821,17 @@ async function init() {
   };
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('hashchange', () => requestAnimationFrame(onScroll));
-  render();
+  // Zurück von der Spotify-Anmeldung? Sonst normal starten
+  if (!(await handleSpotifyCallback())) render();
+  // Wenn die App wieder sichtbar wird (z. B. nach der Anmeldung in Safari): Verbindung neu prüfen
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    const now = await spotify.isConnected();
+    if (now !== spConnected) {
+      spConnected = now;
+      if (route()[0] === 'einstellungen') renderSettings();
+    }
+  });
   if (state.scan.rows.some((r) => r.state === 'pending')) matchPending();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

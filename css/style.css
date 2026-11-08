@@ -797,6 +797,23 @@ body.flow-page::before { display: none; } /* reines Schwarz wie beim iPod */
 .cf-round.on svg { fill: currentColor; }
 .cf-back-head { gap: 8px; }
 
+/* =========================================================
+   Spotify: antippbare Titel, Verbindungs-Code, Hilfe
+   ========================================================= */
+.tracks li[data-action] { cursor: pointer; border-radius: 8px; }
+.tracks li[data-action]:active { background: var(--fill); }
+.code-box {
+  width: 100%; min-height: 96px; margin: 14px 0 12px; padding: 12px 14px; resize: none;
+  border: 0; border-radius: 16px; background: var(--fill); color: var(--text);
+  font: 13px/1.35 ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all;
+}
+.inline-link { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
+.help { color: var(--muted); font-size: 15px; letter-spacing: -0.23px; }
+.help ol { padding-left: 20px; margin: 12px 0 0; }
+.help li { margin: 10px 0; }
+.help b, .help i { color: var(--text); }
+.help code { display: inline-block; margin-top: 6px; padding: 6px 10px; border-radius: 10px; background: var(--fill); color: var(--text); font: 13px ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

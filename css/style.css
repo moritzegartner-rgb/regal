@@ -658,14 +658,13 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
   height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 150px);
   height: calc(100svh - var(--safe-top) - var(--safe-bottom) - 150px);
   min-height: 300px; max-height: 640px;
-  perspective: 820px; perspective-origin: 50% 40%;
+  --s: 200px; perspective: 820px; perspective-origin: 50% 40%;
   overflow: hidden; touch-action: none;
   -webkit-user-select: none; user-select: none;
 }
+/* jede Hülle sitzt als 3D-Gruppe in der Mitte; Größe --s setzt das Skript (siehe css/jewel.css) */
 .cf-item {
-  position: absolute; left: 50%; top: 40%;
-  width: var(--cf, 240px); height: var(--cf, 240px);
-  margin: calc(var(--cf, 240px) / -2) 0 0 calc(var(--cf, 240px) / -2);
+  position: absolute; left: 50%; top: 42%; width: 0; height: 0;
   transform-style: preserve-3d; cursor: pointer;
 }
 .cf-card {

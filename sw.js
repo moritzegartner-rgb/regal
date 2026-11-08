@@ -1,16 +1,18 @@
 // Service Worker: App funktioniert auch ohne Netz, Cover werden zwischengespeichert
-const VERSION = 'regal-v14';
+const VERSION = 'regal-v15';
 const COVERS = 'regal-covers';
 const SHELL = [
   './',
   './index.html',
   './css/style.css',
+  './css/jewel.css',
   './js/app.js',
   './js/db.js',
   './js/util.js',
   './js/gemini.js',
   './js/musicbrainz.js',
   './js/spotify.js',
+  './js/jewel.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',

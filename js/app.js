@@ -5,9 +5,10 @@ import { db, getSetting, setSetting, getCache, setCache } from './db.js';
 import * as mb from './musicbrainz.js';
 import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
+import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.6.1';
+const APP_VERSION = '2.7.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -25,7 +26,15 @@ const state = {
   listQ: {}, // Suchtext je Liste
   current: null, // Daten der gerade offenen Interpretenseite
   scan: { rows: [], busy: false, matching: false, status: '' },
+  caseType: 'classic', // CD-Hülle: 'classic' (schwarzer Träger) oder 'clear'
+  scratches: '0.9', // Kratzer auf dem Plastik: 0 = aus … 1.35 = stark
 };
+
+// Aussehen der CD-Hüllen anwenden
+function applyLook() {
+  document.body.classList.toggle('jc-clear', state.caseType === 'clear');
+  document.documentElement.style.setProperty('--sk', state.scratches);
+}
 
 const view = () => $('#view');
 
@@ -235,6 +244,7 @@ function route() {
 
 function render() {
   closeSheet();
+  jewel.closeBooklet();
   state.current = null;
   const r = route();
   const key = r.join('/');
@@ -257,49 +267,22 @@ function render() {
 // 1) Durchblättern – Startbildschirm (Interpreten) und Alben eines Interpreten
 // =====================================================================
 const CF = {
-  level: 'artists', key: '', entries: [], els: [], pos: 0, target: 0, size: 240,
-  raf: 0, flipped: -1, shown: -1, fast: false, fastTimer: 0, settleTimer: 0, mem: {},
+  level: 'artists', key: '', entries: [], els: [], pos: 0, target: 0, size: 200,
+  raf: 0, shown: -1, settleTimer: 0, mem: {},
+  // ausgewählt (andere Hüllen weggeglitten), Drehwinkel, umgedreht, aufgeklappt, angetippt-und-unterwegs
+  focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, openRaf: 0, pending: -1,
 };
-const CF_WINDOW = 6; // so viele Cover links und rechts werden gezeichnet
+const CF_WINDOW = 5; // so viele Hüllen links und rechts werden gebaut
+const FOCUS_SCALE = 1.22; // ausgewählte Hülle etwas größer
+const clampCF = (v) => Math.max(0, Math.min(CF.entries.length - 1, v));
+const isBack = (deg) => Math.abs(Math.round(deg / 180)) % 2 === 1;
+const entryRgid = (e) => (e?.missing ? e.album?.mbid : e?.item?.mbid) || '';
 
 function artistEntries() {
   return libraryGroups().map((g) => {
     const pic = artMem.get(g.key) || {};
     return { key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), img: pic.img || '', big: pic.big || '', group: g };
   });
-}
-
-// Vorderseite eines Covers. Interpreten: Profilbild von Spotify, sonst der Name als Schriftzug.
-function cfFaceHtml(e) {
-  if (CF.level === 'artists') {
-    return e.img
-      ? `<div class="cover cf-cover artist-photo"><img data-src="${esc(e.img)}" data-big="${esc(e.big)}" alt="" draggable="false"></div>`
-      : `<div class="cover cf-cover artist-card text"><span class="artist-name">${esc(e.title)}</span></div>`;
-  }
-  return `<div class="cover cf-cover" style="--h:${hue(e.title)}">
-    <span class="ph">${esc(e.title)}</span>${e.cover ? `<img data-src="${esc(e.cover)}" alt="" draggable="false">` : ''}
-  </div>`;
-}
-
-// Cover + Spiegelung darunter. Die Spiegelung ist deckend (schwarz verlaufend) wie beim iPod,
-// darum überdecken sich die Spiegelungen benachbarter Cover sauber statt durchzuscheinen.
-function cfFrontHtml(e) {
-  const face = cfFaceHtml(e);
-  return `${face}<div class="cf-reflect" aria-hidden="true"><div class="cf-reflect-inner">${face}</div></div>`;
-}
-
-// Profilbild nachträglich eingetroffen: nur dieses Cover austauschen (kein Springen)
-function cfRefreshArtist(key) {
-  if (CF.level !== 'artists' || !$('#cf-stage')) return;
-  const i = CF.entries.findIndex((e) => e.key === key);
-  if (i < 0) return;
-  const pic = artMem.get(key) || {};
-  if ((pic.img || '') === CF.entries[i].img) return;
-  CF.entries[i].img = pic.img || '';
-  CF.entries[i].big = pic.big || '';
-  const front = CF.els[i]?.querySelector('.cf-front');
-  if (front) front.innerHTML = cfFrontHtml(CF.entries[i]);
-  cfLayout();
 }
 
 function albumEntries(g) {
@@ -317,12 +300,84 @@ function albumEntries(g) {
   return list.sort((a, b) => a.sortYear.localeCompare(b.sortYear) || collator.compare(a.title, b.title));
 }
 
+// ---------- Die CD-Hülle eines Eintrags ----------
+// Rückseite ohne Foto: Titel und echte Titelliste (jeder Titel lässt sich antippen)
+function cfBackGen(e, det, err) {
+  const artist = state.current?.g?.name || '';
+  const sp = { artist, title: e.title, sid: det?.spotify || '' };
+  const tracks = (det?.discs || []).flatMap((d) => d.tracks);
+  const n = tracks.length, cols = n > 9 ? 2 : 1, rows = Math.max(6, Math.ceil(n / cols));
+  const list = n
+    ? `<ol class="jc-tracks ${cols === 2 ? 'two' : ''}" style="--rows:${rows}">${tracks.map((t, k) => `<li data-action="sp-track" ${spData(sp)} data-track="${esc(t.title)}" data-pos="${k}"><b>${esc(t.n)}</b>${esc(t.title)}</li>`).join('')}</ol>`
+    : `<p class="jc-hint">${esc(err || (det ? 'Keine Titelliste gefunden.' : 'Titel werden geladen …'))}</p>`;
+  const year = e.item?.year || e.album?.year || '';
+  return `<div class="bk-head"><div><small>${esc(artist)}</small><b>${esc(e.title)}</b></div></div>${list}
+    <div class="bk-foot"><i class="barcode"></i><span>${year ? `℗ ${esc(year)}` : ''}</span></div>`;
+}
+
+// Knöpfe auf der Rückseite: Titelliste, Wunschliste (nur fehlende Alben), Mehr, Abspielen
+function cfButtons(i, e) {
+  const artist = state.current?.g?.name || '';
+  const sp = { artist, title: e.title, sid: albumMem.get(entryRgid(e))?.spotify || '' };
+  const wished = e.missing && isWished(`mb:${e.album.mbid}`);
+  return `<button class="bk-btn list" data-action="jc-list" aria-label="Titelliste">${icon('list', 18)}</button>
+    ${e.missing ? `<button class="bk-btn wish ${wished ? 'on' : ''}" data-action="cf-wish" data-i="${i}" aria-label="Wunschliste">${icon('heart', 18)}</button>` : ''}
+    <button class="bk-btn more" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>
+    <button class="bk-btn play" ${spData(sp)} data-action="sp-play" aria-label="Abspielen">${icon('play', 18)}</button>`;
+}
+
+// Hülle erst bauen, wenn sie in die Nähe kommt (spart Speicher bei großen Sammlungen)
+function cfBuild(i) {
+  const el = CF.els[i];
+  if (!el || el.dataset.built) return;
+  const e = CF.entries[i];
+  const artists = CF.level === 'artists';
+  el.innerHTML = jewel.caseHtml({
+    seed: i + 1,
+    img: artists ? (e.big || e.img) : bigCover(e.cover),
+    small: artists ? (e.img || e.big) : e.cover,
+    name: e.title, // ohne Bild: Name als Schriftzug
+    spine: artists ? e.title : `${state.current?.g?.name || ''} · ${e.title}`,
+    backHtml: artists ? `<div class="bk-head"><div><small>${esc(e.sub)}</small><b>${esc(e.title)}</b></div></div>` : cfBackGen(e, albumMem.get(entryRgid(e)) || null),
+    buttonsHtml: artists ? '' : cfButtons(i, e),
+  });
+  el.dataset.built = '1';
+  if (artists) return;
+  const rgid = entryRgid(e);
+  if (!rgid) return;
+  // echte Fotos (Rückseite, Rücken, Innenseite, CD, Booklet) suchen und einsetzen
+  jewel.findScan(rgid).then((sc) => {
+    if (sc && CF.els[i] === el && el.dataset.built) jewel.applyScan(el.firstElementChild, sc);
+  }).catch(() => {});
+}
+function cfTeardown(i) {
+  const el = CF.els[i];
+  if (!el?.dataset.built || i === CF.focused) return;
+  el.innerHTML = '';
+  delete el.dataset.built;
+}
+
+// Profilbild nachträglich eingetroffen: nur diese Hülle neu bauen (kein Springen)
+function cfRefreshArtist(key) {
+  if (CF.level !== 'artists' || !$('#cf-stage')) return;
+  const i = CF.entries.findIndex((e) => e.key === key);
+  if (i < 0) return;
+  const pic = artMem.get(key) || {};
+  if ((pic.img || '') === CF.entries[i].img) return;
+  CF.entries[i].img = pic.img || '';
+  CF.entries[i].big = pic.big || '';
+  if (CF.els[i]?.dataset.built) { CF.els[i].innerHTML = ''; delete CF.els[i].dataset.built; }
+  cfLayout();
+}
+
 function renderFlow(level, key = '') {
   const g = level === 'albums' ? libraryGroups().find((x) => x.key === key) : null;
   if (level === 'albums' && !g) { location.replace('#/'); return; }
   const entries = level === 'artists' ? artistEntries() : albumEntries(g);
-  Object.assign(CF, { level, key, entries, flipped: -1, shown: -1, fast: false });
+  cancelAnimationFrame(CF.openRaf);
+  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1 });
   if (g) state.current = { kind: 'flow', g };
+  jewel.initJewel();
 
   // Oben in der Mitte: „Läuft gerade“ (nur wenn ein anderes Album läuft) – sonst bleibt es leer
   const center = spConnected ? npNowHtml() : '';
@@ -352,12 +407,7 @@ function renderFlow(level, key = '') {
   view().innerHTML = `${nav}
     <div class="cf-area">
       <div class="cf-stage ${spConnected ? 'with-np' : ''}" id="cf-stage">
-        ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
-          <div class="cf-card">
-            <div class="cf-front">${cfFrontHtml(e)}</div>
-            ${level === 'albums' ? '<div class="cf-back"></div>' : ''}
-          </div>
-        </div>`).join('')}
+        ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none"></div>`).join('')}
       </div>
     </div>
     <div class="cf-info">
@@ -372,14 +422,13 @@ function renderFlow(level, key = '') {
   const start = Math.max(0, entries.findIndex((e) => e.key === CF.mem[memKey]));
   CF.pos = start;
   CF.target = start;
-  cfBind();
   cfLayout();
   cfSettle();
 
   // Diskografie fehlt noch? Laden und fehlende Alben grau dazustellen
   if (level === 'albums' && g.mbid && !discoMem.get(g.mbid)) {
     getDisco(g.mbid).then(() => {
-      if (route()[0] === 'flow' && route()[1] === key && CF.flipped < 0) renderFlow('albums', key);
+      if (route()[0] === 'flow' && route()[1] === key && CF.focused < 0) renderFlow('albums', key);
     }).catch(() => {});
   }
 }
@@ -387,60 +436,50 @@ function renderFlow(level, key = '') {
 function cfLayout() {
   const stage = $('#cf-stage');
   if (!stage) return false;
-  CF.size = Math.round(Math.min(stage.clientWidth * 0.56, stage.clientHeight * 0.58, 320));
-  stage.style.setProperty('--cf', `${CF.size}px`);
-  const s = CF.size;
+  const s = Math.round(Math.min(stage.clientWidth * 0.44, stage.clientHeight * 0.55, 280));
+  CF.size = s;
+  stage.style.setProperty('--s', `${s}px`);
+  const w = s * 1.136;
+  const cur = clampCF(Math.round(CF.pos));
   CF.els.forEach((el, i) => {
     const d = i - CF.pos;
     const ad = Math.abs(d);
-    const imgs = el.querySelectorAll('.cf-front img');
     if (ad > CF_WINDOW + 0.5) {
       if (el.style.display !== 'none') el.style.display = 'none';
-      // weit weg: Bilder aus dem Speicher werfen (sonst stürzt Safari bei großen Sammlungen ab)
-      if (ad > CF_WINDOW * 2) imgs.forEach((img) => { if (img.hasAttribute('src')) img.removeAttribute('src'); });
+      if (ad > CF_WINDOW * 2) cfTeardown(i); // weit weg: Hülle abbauen (sonst stürzt Safari bei großen Sammlungen ab)
       return;
     }
+    cfBuild(i);
     if (el.style.display === 'none') el.style.display = '';
-    if (!CF.fast) {
-      imgs.forEach((img) => { if (!img.hasAttribute('src')) { img.classList.remove('broken'); img.src = img.dataset.src; } });
-    }
-    // Wie Cover Flow: das Cover dreht sich schon früh weg (r), während es zur Seite gleitet.
-    // So berühren sich zwei Cover in der Mitte einer Bewegung nie.
-    const c = Math.max(-1, Math.min(1, d));
-    const r = Math.min(1, ad * 1.6) * Math.sign(d);
-    const x = (c * 0.46 + d * 0.14) * s;
-    const z = -Math.min(1, ad) * 0.45 * s;
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-r * 70).toFixed(2)}deg)`;
+    // weich hinaus- und hereindrehen wie beim iPod: Drehung, Versatz und Tiefe folgen derselben sanften Kurve
+    const e = Math.sin(Math.min(1, ad) * Math.PI / 2);
+    const sg = Math.sign(d);
+    let x = sg * (e * 0.4 + ad * 0.21) * w;
+    let z = -e * 0.5 * s;
+    // ein Album ist ausgewählt: die anderen gleiten sanft zur Seite und nach hinten weg
+    if (CF.openK > 0 && i !== cur) { x += sg * CF.openK * stage.clientWidth * 0.9; z -= CF.openK * s * 1.2; }
+    el.style.visibility = CF.openK >= 1 && i !== cur ? 'hidden' : '';
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
     el.style.zIndex = String(1000 - Math.round(ad * 100));
+    jewel.light(el, d);
   });
-  const cur = Math.max(0, Math.min(CF.entries.length - 1, Math.round(CF.pos)));
   if (cur !== CF.shown) {
     CF.shown = cur;
     const e = CF.entries[cur];
     $('.cf-title-text').textContent = e.title;
     $('.cf-sub-text').textContent = e.sub;
-    if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
+    if (CF.flipped >= 0 && CF.flipped !== cur) cfResetFlip(CF.flipped);
     npUpdateView();
   }
   return true;
 }
 
-// Wenn das Blättern zur Ruhe kommt: Position merken, Mitte in hoher Auflösung laden
+// Wenn das Blättern zur Ruhe kommt: Position merken
 function cfSettle() {
   clearTimeout(CF.settleTimer);
   CF.settleTimer = setTimeout(() => {
-    const cur = Math.round(CF.pos);
-    const e = CF.entries[cur];
-    if (!e || !$('#cf-stage')) return;
-    CF.mem[`${CF.level}:${CF.key}`] = e.key;
-    const img = CF.els[cur]?.querySelector('.cf-front > .cf-cover img');
-    const hiSrc = img?.dataset.big || (/\/front-250$/.test(img?.dataset.src || '') ? img.dataset.src.replace(/\/front-250$/, '/front-500') : '');
-    if (img && hiSrc && hiSrc !== img.getAttribute('src') && img.hasAttribute('src')) {
-      const hi = hiSrc;
-      const probe = new Image();
-      probe.onload = () => { if (img.isConnected) img.src = hi; };
-      probe.src = hi;
-    }
+    const e = CF.entries[Math.round(CF.pos)];
+    if (e && $('#cf-stage')) CF.mem[`${CF.level}:${CF.key}`] = e.key;
   }, 350);
 }
 
@@ -448,120 +487,245 @@ function cfAnimate() {
   cancelAnimationFrame(CF.raf);
   const step = () => {
     const diff = CF.target - CF.pos;
-    if (Math.abs(diff) < 0.002) { CF.pos = CF.target; cfLayout(); cfSettle(); return; }
-    CF.pos += diff * 0.16;
+    if (Math.abs(diff) < 0.002) {
+      CF.pos = CF.target;
+      cfLayout();
+      cfSettle();
+      if (CF.pending === CF.target) { const p = CF.pending; CF.pending = -1; cfSelect(p); } // angetippt: jetzt steht es gerade
+      return;
+    }
+    CF.pos += diff * 0.14;
     if (cfLayout()) CF.raf = requestAnimationFrame(step);
   };
   CF.raf = requestAnimationFrame(step);
 }
 
 function cfGo(i) {
-  CF.target = Math.max(0, Math.min(CF.entries.length - 1, i));
+  CF.target = clampCF(i);
   cfAnimate();
 }
 
-function cfUnflip() {
-  if (CF.flipped < 0) return;
-  CF.els[CF.flipped]?.classList.remove('flipped');
-  CF.flipped = -1;
+// ---------- Auswählen, Umdrehen, Aufklappen ----------
+// Ebenen: Blättern → ausgewählt → aufgeklappt → Booklet. Tippen ins Dunkle geht immer eine Ebene zurück.
+function cfTweenOpen(to) {
+  cancelAnimationFrame(CF.openRaf);
+  const from = CF.openK;
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / 700);
+    const k = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    CF.openK = from + (to - from) * k;
+    if (!cfLayout()) return;
+    if (t < 1) CF.openRaf = requestAnimationFrame(step);
+  };
+  CF.openRaf = requestAnimationFrame(step);
 }
 
-function cfBackHtml(i, det, err) {
-  const e = CF.entries[i];
-  const artist = state.current?.g?.name || '';
-  const sp = { artist, title: e.title, sid: det?.spotify || '' };
-  let list = '<p class="hint"><span class="spinner small"></span> Lade Titel …</p>';
-  if (det) list = tracksHtml(det, sp);
-  else if (err) list = `<p class="hint">${esc(err)}</p>`;
-  const wished = e.missing && isWished(`mb:${e.album.mbid}`);
-  return `<div class="cf-back-head">
-      <div class="cf-back-titles"><b>${esc(e.title)}</b><span>${esc(artist)}</span></div>
-      ${e.missing ? `<button class="cf-round ${wished ? 'on' : ''}" data-action="cf-wish" data-i="${i}" aria-label="Wunschliste">${icon('heart', 18)}</button>` : ''}
-      <button class="cf-round" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>
-      <button class="cf-play" ${spData(sp)} data-action="sp-play" aria-label="Abspielen">${icon('play', 20)}</button>
-    </div>
-    <div class="cf-back-list">${list}</div>`;
-}
-
-async function cfFlip(i) {
-  if (CF.flipped === i) { cfUnflip(); return; }
-  cfUnflip();
-  const el = CF.els[i];
-  const e = CF.entries[i];
-  const mbid = e.missing ? e.album.mbid : e.item?.mbid;
-  const back = el.querySelector('.cf-back');
-  back.innerHTML = cfBackHtml(i, null, mbid ? null : 'Keine Titelliste – ordne das Album über „Treffer ändern“ zu.');
+function cfJcTransform(i) {
+  const jc = CF.els[i]?.firstElementChild;
   const stage = $('#cf-stage');
-  stage.style.setProperty('--flip-scale', Math.max(1.05, Math.min((stage.clientWidth - 32) / CF.size, 1.45)).toFixed(3));
-  el.classList.add('flipped');
-  CF.flipped = i;
-  if (!mbid) return;
+  if (!jc || !stage) return;
+  if (CF.opened === i) { // aufgeklappt: Deckel links, Unterteil rechts – beides zusammen mittig und leicht geneigt
+    const w = CF.size * 1.136;
+    const osc = Math.min(0.9, (stage.clientWidth * 0.96) / (2 * w));
+    jc.style.transform = `translateX(${(w * 0.5 * osc).toFixed(1)}px) scale(${osc.toFixed(3)}) rotateX(14deg)`;
+  } else if (CF.focused === i) jc.style.transform = `rotateY(${CF.flipDeg}deg) scale(${FOCUS_SCALE})`;
+  else jc.style.transform = '';
+}
+
+function cfResetFlip(i) {
+  const el = CF.els[i];
+  el?.classList.remove('flipped');
+  el?.firstElementChild?.classList.remove('show-list');
+  if (CF.flipped === i) CF.flipped = -1;
+  if (CF.focused !== i && el?.firstElementChild) el.firstElementChild.style.transform = '';
+}
+
+function cfSetFlip(i, deg) {
+  CF.flipDeg = deg;
+  const el = CF.els[i];
+  const jc = el?.firstElementChild;
+  if (!jc) return;
+  if (isBack(deg)) {
+    el.classList.add('flipped');
+    CF.flipped = i;
+    jewel.loadBigBack(jc);
+    cfFillBack(i);
+  } else {
+    el.classList.remove('flipped');
+    jc.classList.remove('show-list');
+    if (CF.flipped === i) CF.flipped = -1;
+  }
+  cfJcTransform(i);
+}
+
+// Titelliste auf der Rückseite mit echten Daten füllen
+async function cfFillBack(i) {
+  if (CF.level !== 'albums') return;
+  const e = CF.entries[i];
+  const el = CF.els[i];
+  const gen = el?.querySelector('.bk-gen');
+  if (!gen || gen.dataset.filled) return;
+  const rgid = entryRgid(e);
+  if (!rgid) { gen.innerHTML = cfBackGen(e, null, 'Keine Titelliste – ordne das Album über „Treffer ändern“ zu.'); gen.dataset.filled = '1'; return; }
   try {
-    const det = await loadAlbumDetails(mbid);
-    if (CF.flipped === i) {
-      back.innerHTML = cfBackHtml(i, det);
-      npUpdateView();
-      // laufenden Titel in die Mitte der Liste holen
-      const list = back.querySelector('.cf-back-list');
-      const li = list?.querySelector('li.playing');
-      if (li) list.scrollTop = Math.max(0, li.offsetTop - list.clientHeight / 2 + li.clientHeight / 2);
-    }
+    const det = await loadAlbumDetails(rgid);
+    if (CF.els[i] !== el || !el.contains(gen)) return;
+    gen.innerHTML = cfBackGen(e, det);
+    gen.dataset.filled = '1';
+    const play = el.querySelector('.bk-btn.play');
+    if (play && det?.spotify) play.dataset.sid = det.spotify;
+    npUpdateView();
   } catch (err) {
-    if (CF.flipped === i) back.innerHTML = cfBackHtml(i, null, err.message);
+    if (el.contains(gen)) gen.innerHTML = cfBackGen(e, null, err.message);
   }
 }
 
-function cfTap(i) {
-  const e = CF.entries[i];
-  if (CF.level === 'artists') location.hash = `#/flow/${enc(e.key)}`;
-  else cfFlip(i);
+// Antippen: erst ganz gerade nach vorne fahren, dann auswählen (Interpreten: dessen Alben öffnen)
+function cfSelect(i) {
+  if (Math.abs(CF.pos - i) > 0.002) { CF.target = clampCF(i); CF.pending = CF.target; cfAnimate(); return; }
+  CF.pos = CF.target = i;
+  cfLayout();
+  if (CF.level === 'artists') { location.hash = `#/flow/${enc(CF.entries[i].key)}`; return; }
+  CF.focused = i;
+  CF.flipDeg = 0;
+  cfBuild(i);
+  cfJcTransform(i);
+  cfTweenOpen(1);
+  cfFillBack(i); // Titelliste schon mal laden
 }
 
-function cfBind() {
-  const stage = $('#cf-stage');
-  let drag = null;
-  stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.cf-back-titles')) { cfUnflip(); return; } // Titel antippen = zurückdrehen
-    if (e.target.closest('.cf-back')) return; // Titelliste darf scrollen, Knöpfe dürfen klicken
-    cancelAnimationFrame(CF.raf);
-    drag = { x: e.clientX, pos: CF.pos, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.cf-item') };
-    stage.setPointerCapture(e.pointerId);
-  });
-  stage.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const dx = e.clientX - drag.x;
-    if (Math.abs(dx) > 6) drag.moved = true;
-    const spacing = CF.size * 0.32;
-    CF.pos = Math.max(-0.4, Math.min(CF.entries.length - 0.6, drag.pos - dx / spacing));
-    const now = performance.now();
-    const dt = Math.max(1, now - drag.lastT);
-    drag.vel = drag.vel * 0.6 + (-(e.clientX - drag.lastX) / spacing / dt * 1000) * 0.4;
-    drag.lastX = e.clientX;
-    drag.lastT = now;
-    cfLayout();
-  });
-  const end = () => {
-    if (!drag) return;
-    const d = drag;
-    drag = null;
-    if (!d.moved) {
-      const i = d.item ? Number(d.item.dataset.i) : Math.round(CF.pos);
-      if (i === Math.round(CF.target) && Math.abs(CF.pos - i) < 0.3) cfTap(i);
-      else cfGo(i);
+function cfUnfocus() {
+  const i = CF.focused;
+  if (i < 0) return;
+  if (CF.opened === i) cfSetOpen(i, false);
+  CF.focused = -1;
+  if (isBack(CF.flipDeg)) cfSetFlip(i, CF.flipDeg + 180); // zurück auf die Vorderseite
+  CF.flipDeg = 0;
+  cfJcTransform(i);
+  cfTweenOpen(0);
+}
+
+function cfSetOpen(i, on) {
+  const el = CF.els[i];
+  if (!el) return;
+  if (on) {
+    if (isBack(CF.flipDeg)) { // erst auf die Vorderseite drehen, dann aufklappen
+      cfSetFlip(i, CF.flipDeg + 180);
+      setTimeout(() => { if (CF.focused === i && CF.opened < 0) cfSetOpen(i, true); }, 450);
       return;
     }
-    cfGo(Math.round(CF.pos + Math.max(-8, Math.min(8, d.vel * 0.22))));
-  };
-  stage.addEventListener('pointerup', end);
-  stage.addEventListener('pointercancel', end);
+    el.classList.add('inner'); // Innenteile zuerst einblenden, dann aufklappen
+    jewel.findScan(entryRgid(CF.entries[i])).then((sc) => jewel.ensureBook(sc, el.firstElementChild)).catch(() => {});
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
+    CF.opened = i;
+  } else {
+    el.classList.remove('open');
+    if (CF.opened === i) CF.opened = -1;
+    setTimeout(() => { if (!el.classList.contains('open')) el.classList.remove('inner'); }, 1000);
+  }
+  cfJcTransform(i);
 }
 
-window.addEventListener('resize', () => { if ($('#cf-stage')) cfLayout(); });
+async function cfOpenBooklet(i) {
+  const e = CF.entries[i];
+  const sc = await jewel.findScan(entryRgid(e)).catch(() => null);
+  jewel.openBooklet(sc, bigCover(e.cover));
+}
+
+// Eine Ebene zurück (ins Dunkle tippen, Escape)
+function cfStepBack() {
+  if (jewel.bookletOpen()) { jewel.closeBooklet(); return true; }
+  if (CF.opened >= 0) { cfSetOpen(CF.opened, false); return true; }
+  if (CF.focused >= 0) { cfUnfocus(); return true; }
+  return false;
+}
+
+// ---------- Wischen und Tippen ----------
+// Die ganze Seite hört zu, damit „ins Dunkle tippen“ überall klappt – Knöpfe, Kopfzeile und Player ausgenommen.
+let cfDrag = null;
+const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, [data-action], a, input, select, textarea, label');
+document.addEventListener('pointerdown', (e) => {
+  const stage = $('#cf-stage');
+  if (!stage || jewel.bookletOpen() || cfIgnore(e.target)) return;
+  if (CF.focused < 0 && !stage.contains(e.target)) return; // in der Übersicht nur auf der Bühne wischen
+  cancelAnimationFrame(CF.raf);
+  cfDrag = {
+    x: e.clientX, y: e.clientY, cx: e.clientX, pos: CF.pos, deg: CF.flipDeg, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false,
+    item: e.target.closest('.cf-item'), inJc: !!e.target.closest('.jc'), inLid: !!e.target.closest('.lidg'),
+  };
+  try { stage.setPointerCapture(e.pointerId); } catch {}
+});
+document.addEventListener('pointermove', (e) => {
+  if (!cfDrag || !$('#cf-stage')) return;
+  const dx = e.clientX - cfDrag.x;
+  const dy = e.clientY - cfDrag.y;
+  cfDrag.cx = e.clientX;
+  if (Math.abs(dx) > 6 || Math.abs(dy) > 6) cfDrag.moved = true;
+  if (CF.opened >= 0) return; // aufgeklappt: nichts verschieben
+  if (CF.focused >= 0) { // ausgewählt: die Hülle folgt beim Umdrehen dem Finger
+    if (!cfDrag.moved) return;
+    const jc = CF.els[CF.focused]?.firstElementChild;
+    if (!jc) return;
+    jc.style.transition = 'none';
+    jc.style.transform = `rotateY(${(cfDrag.deg + dx * 0.6).toFixed(1)}deg) scale(${FOCUS_SCALE})`;
+    return;
+  }
+  const spacing = CF.size * 0.3;
+  CF.pos = Math.max(-0.4, Math.min(CF.entries.length - 0.6, cfDrag.pos - dx / spacing));
+  const now = performance.now();
+  const dt = Math.max(1, now - cfDrag.lastT);
+  cfDrag.vel = cfDrag.vel * 0.6 + (-(e.clientX - cfDrag.lastX) / spacing / dt * 1000) * 0.4;
+  cfDrag.lastX = e.clientX;
+  cfDrag.lastT = now;
+  cfLayout();
+});
+const cfEnd = () => {
+  if (!cfDrag) return;
+  const d = cfDrag;
+  cfDrag = null;
+  if (!$('#cf-stage')) return;
+  const tap = !d.moved;
+  if (CF.opened >= 0) { // aufgeklappt: Booklet antippen = lesen, ins Dunkle = zuklappen
+    if (tap) { if (d.inLid) cfOpenBooklet(CF.opened); else if (!d.inJc) cfSetOpen(CF.opened, false); }
+    return;
+  }
+  if (CF.focused >= 0) {
+    const i = CF.focused;
+    const jc = CF.els[i]?.firstElementChild;
+    if (jc) jc.style.transition = '';
+    if (tap) { if (d.inJc) cfSetOpen(i, true); else cfUnfocus(); return; }
+    // Wischen: über die Hälfte gedreht oder kräftig gewischt → umdrehen (in Wischrichtung), sonst zurückfedern
+    const dx = d.cx - d.x;
+    let to = Math.round((d.deg + dx * 0.6) / 180) * 180;
+    if (to === d.deg && Math.abs(dx) > 40) to = d.deg + Math.sign(dx) * 180;
+    cfSetFlip(i, to);
+    return;
+  }
+  if (tap) {
+    if (d.item) cfSelect(Number(d.item.dataset.i));
+    else if (Math.abs(CF.pos - Math.round(CF.pos)) > 0.002) cfGo(Math.round(CF.pos)); // daneben getippt: sauber einrasten
+    return;
+  }
+  CF.pending = -1;
+  cfGo(Math.round(CF.pos + Math.max(-8, Math.min(8, d.vel * 0.22))));
+};
+document.addEventListener('pointerup', cfEnd);
+// abgebrochene Berührung (z. B. Systemgeste) zählt nicht als Tippen
+document.addEventListener('pointercancel', () => { if (cfDrag) { cfDrag.moved = true; cfEnd(); } });
+
+window.addEventListener('resize', () => {
+  if (!$('#cf-stage')) return;
+  cfLayout();
+  if (CF.focused >= 0) cfJcTransform(CF.focused);
+});
 document.addEventListener('keydown', (e) => {
   if (!$('#cf-stage') || document.activeElement?.tagName === 'INPUT') return;
+  if (e.key === 'Escape') { cfStepBack(); return; }
+  if (CF.focused >= 0) return;
   if (e.key === 'ArrowRight') cfGo(Math.round(CF.target) + 1);
   if (e.key === 'ArrowLeft') cfGo(Math.round(CF.target) - 1);
-  if (e.key === 'Enter') cfTap(Math.round(CF.target));
+  if (e.key === 'Enter') cfSelect(Math.round(CF.target));
 });
 
 function openAddMenu() {
@@ -932,7 +1096,7 @@ function npUpdateView() {
     }
   }
   // Titellisten (umgedrehtes Album, Album-Blatt): laufenden Titel markieren
-  document.querySelectorAll('.tracks li[data-track]').forEach((li) => {
+  document.querySelectorAll('.tracks li[data-track], .jc-tracks li[data-track]').forEach((li) => {
     const on = !!npNow && isPlayingAlbum(li.dataset.title, li.dataset.artist, li.dataset.sid)
       && normTrack(li.dataset.track) === normTrack(npNow.track);
     li.classList.toggle('playing', on);
@@ -1620,6 +1784,20 @@ async function renderSettings() {
     <div id="sp-status" class="group-footer status-line"></div>
     <p class="group-footer">Mit Spotify Premium spielt Regal Alben und einzelne Titel im Hintergrund ab – ohne dass die Spotify-App aufgeht. Spotify muss dafür auf dem iPhone irgendwann geöffnet worden sein.</p>
 
+    <h3 class="group-title">CD-Hülle</h3>
+    <div class="group">
+      <label class="cell">${cellIc('disc')}<span class="cell-label">Hülle</span>
+        <select id="opt-case" class="cell-select">
+          <option value="classic" ${state.caseType !== 'clear' ? 'selected' : ''}>Klassisch</option>
+          <option value="clear" ${state.caseType === 'clear' ? 'selected' : ''}>Klar</option>
+        </select>${chev()}</label>
+      <label class="cell">${cellIc('eye')}<span class="cell-label">Kratzer</span>
+        <select id="opt-scratch" class="cell-select">
+          ${[['0', 'Aus'], ['0.55', 'Wenig'], ['0.9', 'Mittel'], ['1.35', 'Stark']].map(([v, l]) => `<option value="${v}" ${state.scratches === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>${chev()}</label>
+    </div>
+    <p class="group-footer">Klassisch: schwarzer, geriffelter Träger. Klar: durchsichtiger Träger – darunter sieht man den bedruckten Einleger. Die Kratzer glänzen nur dort, wo gerade Licht hinfällt.</p>
+
     <h3 class="group-title">Fotoerkennung</h3>
     <div class="group">
       <div class="cell">${cellIc('key')}<span class="cell-label">Gemini-Schlüssel</span>
@@ -1670,6 +1848,16 @@ async function renderSettings() {
 
     <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive · Interpretenbilder: Spotify</p>`;
   $('#gem-model').addEventListener('change', (e) => setSetting('geminiModel', e.target.value));
+  $('#opt-case').addEventListener('change', async (e) => {
+    state.caseType = e.target.value;
+    applyLook();
+    await setSetting('caseType', state.caseType);
+  });
+  $('#opt-scratch').addEventListener('change', async (e) => {
+    state.scratches = e.target.value;
+    applyLook();
+    await setSetting('scratches', state.scratches);
+  });
   if (spConnected) fillSpDevices();
   $('#opt-live').addEventListener('change', async (e) => {
     state.includeLive = e.target.checked;
@@ -1905,7 +2093,8 @@ const actions = {
     if (a && g) { await ownMatch(albumAsMatch(a, g)); refreshCurrent(); preloadDiscographies(); }
   },
 
-  // Knöpfe auf der Rückseite eines umgedrehten Albums
+  // Knöpfe auf der Rückseite einer umgedrehten Hülle
+  'jc-list': (el) => { el.closest('.jc')?.classList.toggle('show-list'); },
   'cf-more': (el) => {
     const x = flowAlbum(el);
     if (!x) return;
@@ -2017,6 +2206,8 @@ async function init() {
     state.wishes = wishes.filter((w) => w.type !== 'dvd');
     state.geminiKey = await getSetting('geminiKey', '');
     state.includeLive = await getSetting('includeLive', false);
+    state.caseType = await getSetting('caseType', 'classic');
+    state.scratches = String(await getSetting('scratches', '0.9'));
     const pending = await getCache('pendingScan');
     if (Array.isArray(pending?.data)) state.scan.rows = pending.data.filter((r) => r.type !== 'dvd');
     spConnected = await spotify.isConnected();
@@ -2024,6 +2215,7 @@ async function init() {
     toast(`Der Speicher konnte nicht geöffnet werden: ${e.message}`, 'error');
   }
   changed();
+  applyLook();
   window.addEventListener('hashchange', render);
   // Beim Scrollen: kleiner Titel + weicher Glas-Rand oben (wie iOS)
   const onScroll = () => {

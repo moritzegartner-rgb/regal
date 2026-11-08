@@ -132,6 +132,12 @@ export async function albumDetails(rgid) {
   return { releaseId: best.id, discs, spotify: spotify[0]?.id || null };
 }
 
+// Alle Ausgaben eines Albums mit Format, Verpackung und Bilder-Angaben (für die CD-Hülle)
+export async function releasesOf(rgid) {
+  const d = await mbFetch(`/release?release-group=${rgid}&inc=media&limit=100`);
+  return d.releases || [];
+}
+
 // Spotify-ID eines Interpreten aus den MusicBrainz-Verknüpfungen
 export async function artistSpotifyId(artistMbid) {
   const d = await mbFetch(`/artist/${artistMbid}?inc=url-rels`);

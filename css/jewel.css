@@ -1,0 +1,321 @@
+/* =========================================================
+   CD-Hülle (Jewel Case) in 3D – gehört zu js/jewel.js
+   Maße wie im Original: 142 × 125 × 10,4 mm. --s (Höhe) kommt von der Bühne.
+   ========================================================= */
+:root { --sk: .9; }
+/* ============ Jewel Case – Maße wie im Original: 142 × 125 × 10,4 mm ============ */
+/* --b: Rundung der senkrechten Kanten, --e: Überlappung der Flächen, --L: Tiefe des Deckels */
+.jc { --w: calc(var(--s) * 1.136); --t: calc(var(--s) * 0.083); --b: calc(var(--t) * 0.14); --e: .75px; --L: calc(var(--t) * 0.25);
+  --sw: calc(var(--t) - var(--L) - var(--b)); --lw: calc(var(--L) - var(--b)); --bh: calc(var(--t) - var(--L));
+  position: absolute; width: var(--w); height: var(--s); left: calc(var(--w) / -2); top: calc(var(--s) / -2);
+  transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,1.1,.4,1); }
+.face { position: absolute; top: 0; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.front, .back, .linner, .bframe, .trayp, .floor { left: calc(var(--b) - var(--e)); width: calc(100% - 2 * var(--b) + 2 * var(--e)); }
+.front { transform: translateZ(calc(var(--t) / 2)); }
+.back { transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
+
+/* Deckel als eigene Gruppe – dreht sich am Scharnier (linke Kante) auf */
+.lidg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-style: preserve-3d;
+  transform-origin: 0 50% calc(var(--t) / 2 - var(--L) / 2); transition: transform .95s cubic-bezier(.35,.85,.3,1); }
+.cf-item.open .lidg { transform: rotateY(-178deg); }
+/* Innenteile nur, wenn die Hülle offen ist (spart Rechenarbeit) */
+.cf-item:not(.inner) .disc, .cf-item:not(.inner) .linner, .cf-item:not(.inner) .bframe { display: none; }
+
+/* gerundete Kanten als schmale Schrägflächen */
+.bev { width: calc(var(--b) * 1.4142 + 2 * var(--e)); }
+.bev.fl, .bev.bl { left: calc(var(--b) * -0.2071 - var(--e)); }
+.bev.fr, .bev.br { left: calc(100% - var(--b) * 1.2071 - var(--e)); }
+.bev.fl { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(-45deg); background: linear-gradient(90deg, #19191b, #222225 55%, #1c1c1e); }
+.bev.bl { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(-135deg);
+  background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,.32) 50%, rgba(255,255,255,.12)), #232327; }
+.bev.fr { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(45deg);
+  background: linear-gradient(90deg, rgba(255,255,255,.24), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.1)), #1d1d21; }
+.bev.br { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(135deg);
+  background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.32) 50%, rgba(255,255,255,.16)), #232327; }
+
+/* Seiten: Unterteil (hinten) und Deckel (vorne) getrennt, damit der Deckel aufklappen kann */
+.side-l, .side-r { width: calc(var(--sw) + 2 * var(--e)); }
+.side-l { left: calc(var(--sw) / -2 - var(--e)); transform: translateZ(calc((var(--b) - var(--L)) / 2)) rotateY(-90deg); }
+.side-r { left: calc(100% - var(--sw) / 2 - var(--e)); transform: translateZ(calc((var(--b) - var(--L)) / 2)) rotateY(90deg); }
+.lside-l, .lside-r { width: calc(var(--lw) + 2 * var(--e)); }
+.lside-l { left: calc(var(--lw) / -2 - var(--e)); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(-90deg); }
+.lside-r { left: calc(100% - var(--lw) / 2 - var(--e)); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(90deg); }
+/* Ober- und Unterkante, ebenfalls Unterteil + Deckel */
+.face.top-f, .face.bot-f { left: 0; width: 100%; height: var(--bh); }
+.face.top-f { top: calc(var(--bh) / -2); transform: translateZ(calc(var(--L) / -2)) rotateX(90deg);
+  clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% 100%, 0 100%, 0 var(--b)); }
+.face.bot-f { top: calc(var(--s) - var(--bh) / 2); transform: translateZ(calc(var(--L) / -2)) rotateX(-90deg);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b))); }
+.face.ltop, .face.lbot { left: 0; width: 100%; height: var(--L); }
+.face.ltop { top: calc(var(--L) / -2); transform: translateZ(calc(var(--t) / 2 - var(--L) / 2)) rotateX(90deg);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b)));
+  background: linear-gradient(0deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.2) 1px, rgba(255,255,255,.12) 85%, #000 85%), #2b2b30; }
+.face.lbot { top: calc(var(--s) - var(--L) / 2); transform: translateZ(calc(var(--t) / 2 - var(--L) / 2)) rotateX(-90deg);
+  clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% 100%, 0 100%, 0 var(--b));
+  background: linear-gradient(180deg, rgba(255,255,255,.4) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.1) 85%, #000 85%), #26262b; }
+/* Ober-/Unterkante (nach Foto): glatter klarer Streifen, geriffelt, zwei Aussparungen, runder Scharnier-Zapfen */
+.top-f, .bot-f { background: #1b1b1f; overflow: hidden; }
+.eb { position: absolute; left: 0; right: 0; height: 24%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.18) 1px, rgba(255,255,255,.1)), #2a2a2f; }
+.top-f .eb { top: 0; } .bot-f .eb { bottom: 0; transform: scaleY(-1); }
+.ribz { position: absolute; left: 0; right: 0; background: repeating-linear-gradient(90deg, rgba(255,255,255,.24) 0 1px, rgba(255,255,255,.06) 1px 2px, rgba(0,0,0,0) 2px 3px), #222226; }
+.top-f .ribz { top: 24%; bottom: 0; } .bot-f .ribz { top: 0; bottom: 24%; }
+.notch { position: absolute; height: 42%; background: repeating-linear-gradient(180deg, rgba(255,255,255,.3) 0 1px, rgba(0,0,0,.45) 1px 3px), #141417;
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3); }
+.top-f .notch { top: 40%; } .bot-f .notch { top: 18%; }
+.notch.n1 { left: 14%; width: 7%; } .notch.n2 { left: 73%; width: 6%; }
+.pivot { position: absolute; left: 3%; width: 9%; height: 72%; background: repeating-linear-gradient(180deg, rgba(255,255,255,.26) 0 1px, rgba(0,0,0,.4) 1px 3px), #131316; }
+.top-f .pivot { top: 24%; border-radius: 0 0 50% 50% / 0 0 100% 100%; } .bot-f .pivot { top: 4%; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+
+/* ---------- Deckel außen: klares Plastik, darunter das Booklet ---------- */
+.lid { position: absolute; inset: 0; overflow: hidden; border-radius: 1px; }
+.rim-t, .rim-b { position: absolute; left: 0; right: 0; height: 2%; }
+.rim-t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.rim-b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.rim-l { position: absolute; left: 0; top: 0; bottom: 0; width: .6%; background: linear-gradient(90deg, rgba(255,255,255,.45), rgba(255,255,255,.1)); }
+.rim-r { position: absolute; right: 0; top: 0; bottom: 0; width: 3.6%;
+  background: linear-gradient(90deg, rgba(0,0,0,var(--tdark, .85)) 0 22%, rgba(255,255,255,.08) 22%, rgba(255,255,255,var(--lip, .35)) 42%, rgba(255,255,255,.1) 60%,
+    rgba(0,0,0,.75) 60% 70%, rgba(255,255,255,.12) 70%, rgba(255,255,255,.42) 100%), rgba(18,18,20,var(--rimA, .85)); }
+.step { position: absolute; left: 8.4%; width: 1.1%; top: 0; bottom: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.32) 25%, rgba(0,0,0,.4) 45%, rgba(255,255,255,.24) 65%, rgba(255,255,255,.03)); }
+.booklet { position: absolute; top: 2%; bottom: 2%; right: 3.6%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7);
+  transform: translate(var(--ox, 0), var(--oy, 0)) rotate(var(--rot, 0deg)); }
+.booklet::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(165deg, rgba(255,255,255,.06), rgba(255,255,255,0) 35%, rgba(0,0,0,.05) 70%, rgba(0,0,0,.13)),
+    linear-gradient(90deg, rgba(0,0,0,.22), rgba(0,0,0,0) 2.5%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+.ring { position: absolute; right: 2.75%; width: 1.7%; aspect-ratio: 1; border-radius: 50%; margin-top: -.85%;
+  border: 1.5px solid rgba(225,225,232,.8); background: rgba(255,255,255,.1); box-shadow: 0 0 2px rgba(0,0,0,.7), inset 0 0 1px rgba(0,0,0,.6); }
+.ring.a { top: 40%; } .ring.b { top: 76%; }
+.lid::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.3); pointer-events: none; }
+/* Glanzschicht des klaren Plastiks – bei der klassischen Hülle nicht über dem matten Rand */
+.gloss { position: absolute; top: 0; bottom: 0; left: 8.4%; right: 0; overflow: hidden; pointer-events: none; }
+.gloss.bk { left: 0; right: 0; }
+.sheen { position: absolute; inset: 0;
+  background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.15) 43%, rgba(255,255,255,.055) 49%, rgba(255,255,255,0) 57%);
+  background-size: 320% 100%; background-position: var(--sx, 50%) 0; }
+.uneven { position: absolute; inset: 0;
+  background: radial-gradient(150% 70% at var(--ux, 50%) 118%, rgba(255,255,255,0) 60%, rgba(255,255,255,.075) 65%, rgba(255,255,255,0) 71%); }
+.scratch { position: absolute; inset: 0; background-size: 340px 340px; background-position: var(--tx, 0) var(--ty, 0); opacity: var(--sk, .9);
+  -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%);
+  mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%); }
+.wear { position: absolute; inset: 0; background-size: 100% 100%; opacity: var(--sk, .9);
+  -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%);
+  mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%); }
+.crack { position: absolute; inset: 0; width: 100%; height: 100%; opacity: min(1, calc(var(--sk, .9) + .3)); }
+.crack path { fill: none; stroke: rgba(255,255,255,.55); stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.spot { position: absolute; inset: 0;
+  background: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), rgba(255,255,255,.2), rgba(255,255,255,.05) 22%, rgba(255,255,255,0) 42%); }
+
+/* ---------- Deckel innen (sieht man aufgeklappt): Rückseite des Booklets, Klammern, klarer Rahmen ---------- */
+.linner { transform: translateZ(calc(var(--t) / 2 - var(--L))) rotateY(180deg); overflow: hidden; border-radius: 1px;
+  background: rgba(255,255,255,.035); box-shadow: inset 0 0 0 1px rgba(255,255,255,.32), inset 0 0 0 calc(var(--s) * .014) rgba(255,255,255,.06); }
+.bpage { position: absolute; left: 3.6%; top: 2%; bottom: 2%; aspect-ratio: 1; box-shadow: 0 0 0 .5px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.6);
+  background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.35)), var(--img) 50% 50% / cover no-repeat, #ccc; }
+.jc.has-bpage .bpage { background: var(--bpage) var(--bpp, 50% 50%) / var(--bps, cover) no-repeat, #ddd; }
+.lin-hinge { position: absolute; right: 0; top: 0; bottom: 0; width: 8.4%;
+  background: linear-gradient(270deg, rgba(255,255,255,.22), rgba(255,255,255,.05) 35%, rgba(255,255,255,.12) 70%, rgba(255,255,255,.3));
+  box-shadow: inset 1px 0 0 rgba(255,255,255,.35); }
+.clip { position: absolute; width: 7%; aspect-ratio: 2; background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.45); }
+.clip.t { top: 0; border-radius: 0 0 999px 999px; } .clip.b { bottom: 0; border-radius: 999px 999px 0 0; }
+.clip.x1 { left: 18%; } .clip.x2 { left: 70%; }
+.lin-sheen { position: absolute; inset: 0;
+  background: linear-gradient(120deg, rgba(255,255,255,0) 35%, rgba(255,255,255,.1) 45%, rgba(255,255,255,0) 55%); }
+
+/* ---------- Unterteil innen: oberer Rand, Träger, CD, Einleger (mit echter Tiefe) ---------- */
+.bframe { transform: translateZ(calc(var(--t) / 2 - var(--L) - .5px)); border-radius: 1px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3), inset 0 0 0 calc(var(--s) * .016) rgba(255,255,255,.07), inset 0 0 0 calc(var(--s) * .016 + 1px) rgba(255,255,255,.2); }
+/* Träger (Tray): klassisch schwarz, bei klaren Hüllen durchsichtig */
+.trayp { transform: translateZ(calc(var(--t) * -0.12)); overflow: hidden; background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
+.tp-ribs { position: absolute; left: .6%; top: 1.2%; bottom: 1.2%; width: 7.8%; border-radius: calc(var(--s) * .008);
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,.12) 1px 2px, rgba(0,0,0,0) 2px 3px), linear-gradient(90deg, #232326, #1b1b1d 60%, #1f1f22);
+  box-shadow: inset -1px 0 0 rgba(0,0,0,.65); }
+.recess { position: absolute; left: 10.25%; width: 87.5%; aspect-ratio: 1; top: 50%; transform: translateY(-50%); border-radius: 50%;
+  background: radial-gradient(circle, #0e0e10 60%, #131316); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07), inset 0 0 calc(var(--s) * .03) rgba(0,0,0,.9); }
+.fn { position: absolute; left: 49%; width: 10%; aspect-ratio: 2; background: #050506; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+.fn.t { top: 0; border-radius: 0 0 999px 999px; } .fn.b { bottom: 0; border-radius: 999px 999px 0 0; }
+.hub { position: absolute; left: 45%; width: 18%; aspect-ratio: 1; top: 50%; transform: translateY(-50%); border-radius: 50%;
+  background: repeating-conic-gradient(#222226 0 9deg, #0b0b0c 9deg 18deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 0 27%, #000 28%); mask-image: radial-gradient(circle, transparent 0 27%, #000 28%); }
+/* Boden mit dem Einleger (Innenseite) – liegt ganz unten, deshalb sieht man ihn mit Tiefe durch das Plastik */
+.floor { transform: translateZ(calc(var(--t) * -0.44)); overflow: hidden; background: #0a0a0b; }
+body:not(.jc-clear) .floor { display: none; }
+/* die CD: 120 mm, liegt auf dem Träger */
+.face.disc { left: 11.75%; top: 2%; width: 84.5%; height: auto; aspect-ratio: 1; border-radius: 50%; transform: translateZ(calc(var(--t) * -0.06));
+  background: radial-gradient(circle, rgba(255,255,255,.55) 0 19%, rgba(150,155,165,.9) 19.5% 21%, transparent 21.5%),
+    conic-gradient(from 30deg, #b9bcc4, #eceef2, #a3a7b0, #dfe1e7, #9ca0aa, #f0f1f4, #b9bcc4);
+  -webkit-mask-image: radial-gradient(circle, transparent 0 6.25%, #000 6.4%); mask-image: radial-gradient(circle, transparent 0 6.25%, #000 6.4%);
+  box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.jc.has-medium .face.disc { background: var(--medium) 50% 50% / cover no-repeat, #c8cbd1; }
+.disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.4);
+  background: conic-gradient(from var(--da, 0deg), rgba(255,255,255,0), rgba(160,220,255,.14), rgba(255,255,255,.2), rgba(255,210,150,.12), rgba(255,255,255,0) 55%); }
+
+/* ---------- Innenwände: von innen sieht man die Rückseite der Einleger-Rücken (klar) bzw. den schwarzen Träger (klassisch) ---------- */
+.iwall { --iw: calc(var(--t) * 0.69); background: linear-gradient(90deg, #151517, #0b0b0c); }
+.face.iwall-l, .face.iwall-r { width: var(--iw); }
+.iwall-l { left: calc(var(--b) - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateY(90deg); }
+.iwall-r { left: calc(100% - var(--b) - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateY(-90deg); }
+.face.iwall-t, .face.iwall-b { left: 0; width: 100%; height: var(--iw); }
+.iwall-t { top: calc(1px - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateX(-90deg); }
+.iwall-b { top: calc(var(--s) - 1px - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateX(90deg); }
+body.jc-clear .iwall-l, body.jc-clear .iwall-r { background: linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.25)), var(--img) 0% 55% / 520% auto no-repeat, #2a2a2e; }
+/* echte Innenseite: die äußeren Streifen des Tray-Fotos sind genau die Innenseiten der Rücken */
+body.jc-clear .jc.has-tspine .iwall-l { background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.15)), var(--tray) 0% 50% / var(--tsw) 94.4% no-repeat, #2a2a2e; }
+body.jc-clear .jc.has-tspine .iwall-r { background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.15)), var(--tray) 100% 50% / var(--tsw) 94.4% no-repeat, #2a2a2e; }
+body.jc-clear .iwall-t, body.jc-clear .iwall-b { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)), #26262b; }
+/* Innenwände des Deckels */
+.face.liw { width: var(--lw); background: linear-gradient(90deg, rgba(255,255,255,.2), rgba(255,255,255,.06)), #1b1b1f; }
+.liw-l { left: calc(var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(90deg); }
+.liw-r { left: calc(100% - var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(-90deg); }
+
+/* ---------- Seiten: Bodenplatte, Rücken des Einlegers, Schlitz, Deckelkante ---------- */
+.side { overflow: hidden; background: #0d0d0e; }
+.side .inlay { position: absolute; top: 2.4%; bottom: 2.4%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  background: var(--img) 0 50% / auto 100% no-repeat, #2c2c2e; }
+.side-l .inlay { left: 21%; right: 2.5%; }
+.side-r .inlay { left: 2.5%; right: 23%; background-position: 100% 50%; }
+.side .plate { position: absolute; top: 0; bottom: 0; }
+.side-l .plate { left: 0; width: 21%; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.26) 55%, rgba(255,255,255,.08)), #26262b; }
+.side-r .plate { right: 0; width: 23%; background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.16) 1px, rgba(255,255,255,.26) 55%, rgba(255,255,255,.08)), #26262b; }
+.cap { position: absolute; left: 0; right: 0; height: 2.4%;
+  background: linear-gradient(180deg, rgba(255,255,255,.45) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.24) 60%, rgba(0,0,0,.5)), #2a2a2f; }
+.cap.t { top: 0; } .cap.b { bottom: 0; transform: scaleY(-1); }
+.spine { writing-mode: vertical-rl; transform: rotate(180deg); font-size: calc(var(--t) * .34); font-weight: 700; letter-spacing: .08em;
+  color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
+.spine.r { transform: none; }
+/* Schlitz zwischen Deckel und Unterteil – hier öffnet man die Hülle */
+.side .seam { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #000; }
+.side-l .seam { right: 0; box-shadow: -1px 0 0 rgba(255,255,255,.3); }
+.side-r .seam { left: 0; box-shadow: 1px 0 0 rgba(255,255,255,.38); }
+.side .wall { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,0) 7%, rgba(255,255,255,0) 93%, rgba(255,255,255,.12)),
+    linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,0) 4%, rgba(255,255,255,0) 96%, rgba(255,255,255,.08)),
+    linear-gradient(180deg, rgba(255,255,255,0) 15%, rgba(255,255,255,var(--sl, .06)) 50%, rgba(255,255,255,0) 85%);
+  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); }
+.side .wall::after { content: ""; position: absolute; inset: 0; background: var(--tex) 0 0 / 150px 150px; opacity: calc(var(--sk, .9) * .5); }
+/* Deckel-Seiten: Scharnier-Seite matt schwarz, Öffnungs-Seite klare Kante mit Glanz */
+.lside { overflow: hidden; }
+.lside-l { background: repeating-linear-gradient(270deg, rgba(255,255,255,.04) 0 1px, rgba(0,0,0,0) 1px 3px), linear-gradient(270deg, #222225, #1a1a1c 60%, #1f1f21); }
+.lside-r { background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.06) 1px, rgba(255,255,255,var(--lip, .3)) 40%, rgba(255,255,255,.05) 70%, rgba(0,0,0,.5)), #141417; }
+
+/* ---------- Rückseite: Einleger hinter dem klaren Boden ---------- */
+.back { overflow: hidden; border-radius: 1px; background: #0b0b0c; }
+.bk-inlay { position: absolute; left: 1.9%; right: 1.9%; top: 3%; bottom: 3%; overflow: hidden; color: #fff; letter-spacing: 0;
+  background: linear-gradient(180deg, rgba(8,8,10,.6), rgba(8,8,10,.8)), var(--img) 35% 45% / 280% auto no-repeat, #1c1c1e;
+  box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7); }
+.jc.has-scan .bk-inlay { background: var(--scan) 50% 50% / var(--bks, cover) no-repeat, #1c1c1e; }
+.bk-rim { position: absolute; pointer-events: none; }
+.bk-rim.t, .bk-rim.b { left: 0; right: 0; height: 3%; }
+.bk-rim.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.bk-rim.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.bk-rim.l, .bk-rim.r { top: 0; bottom: 0; width: 1.9%; }
+.bk-rim.l { left: 0; background: linear-gradient(90deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.bk-rim.r { right: 0; background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.14) 1px, rgba(255,255,255,.22) 40%, rgba(0,0,0,.6) 72%, rgba(255,255,255,.1) 86%, rgba(255,255,255,0)); }
+.bk-nub { position: absolute; top: .8%; width: 2.2%; height: 1.1%; border-radius: 1px; background: rgba(255,255,255,.22); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.4); }
+.bk-nub.lo { top: auto; bottom: .8%; }
+.bk-dot { position: absolute; left: .5%; top: 47%; width: .9%; aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,.35); }
+.bk-gen { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 5.5% 6% 4%; }
+.jc.has-scan .bk-gen { visibility: hidden; background: rgba(8,8,10,.86); }
+.jc.has-scan.show-list .bk-gen { visibility: visible; }
+.bk-btns { position: absolute; right: 4%; bottom: 5%; display: flex; gap: calc(var(--s) * .025); }
+.bk-btn { width: calc(var(--s) * .1); height: calc(var(--s) * .1); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.bk-btn svg { width: 46%; height: 46%; }
+.bk-btn.play { background: #fff; color: #000; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.bk-btn.play svg { margin-left: 8%; }
+.bk-btn.list { background: rgba(28,28,30,.88); color: #fff; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.35), 0 1px 4px rgba(0,0,0,.6); }
+.jc:not(.has-scan) .bk-btn.list { display: none; }
+.jc.show-list .bk-btn.list { background: #fff; color: #000; }
+.bk-head { display: flex; align-items: center; gap: 4%; }
+.bk-head div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bk-head small { font-size: calc(var(--s) * .032); font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+.bk-head b { font-size: calc(var(--s) * .062); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-foot { display: flex; align-items: flex-end; gap: 5%; font-size: calc(var(--s) * .026); color: rgba(255,255,255,.5); }
+.barcode { display: block; width: calc(var(--s) * .17); height: calc(var(--s) * .075); border: calc(var(--s) * .008) solid #fff;
+  background: repeating-linear-gradient(90deg, #111 0 1px, #fff 1px 2px, #111 2px 4px, #fff 4px 5px, #111 5px 6px, #fff 6px 8px, #111 8px 9px, #fff 9px 11px); }
+/* Rücken aus dem Scan: rechter Streifen = Scharnier-Seite, linker Streifen = Öffnungs-Seite */
+.jc.has-spine .side .inlay { background: var(--scan) 100% 50% / var(--spw) 100% no-repeat, #2c2c2e; }
+.jc.has-spine .side-r .inlay { background-position: 0 50%; }
+.jc.has-spine .spine { display: none; }
+
+/* ---------- Klare Hülle (Clear Tray) ---------- */
+body.jc-clear { --tdark: .3; --rimA: .3; }
+/* Boden: echte Innenseite des Einlegers – sonst eine Textur aus dem Cover */
+body.jc-clear .floor, body.jc-clear .lid.solid { background: linear-gradient(rgba(0,0,0,.2), rgba(0,0,0,.2)), var(--img) 0% 55% / 520% auto no-repeat, #1c1c1e; }
+body.jc-clear .jc.has-tray .floor, body.jc-clear .jc.has-tray .lid.solid { background: linear-gradient(rgba(0,0,0,.1), rgba(0,0,0,.1)), var(--tray) 50% 50% / var(--trs) no-repeat, #0b0b0c; }
+/* Träger durchsichtig: nur feine Kanten, Mulde, Finger-Aussparungen und Rosette aus Klarplastik */
+body.jc-clear .trayp { background: rgba(255,255,255,.035); box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+body.jc-clear .tp-ribs { background: linear-gradient(90deg, rgba(255,255,255,.1), rgba(255,255,255,.03) 30%, rgba(255,255,255,0) 60%, rgba(255,255,255,.06));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), inset -1px 0 0 rgba(255,255,255,.26); }
+body.jc-clear .recess { background: rgba(255,255,255,.025); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 0 0 1px rgba(255,255,255,.08); }
+body.jc-clear .fn { background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35); }
+body.jc-clear .hub { background: repeating-conic-gradient(rgba(255,255,255,.3) 0 9deg, rgba(255,255,255,.08) 9deg 18deg); }
+body.jc-clear .gloss:not(.bk) { left: 0; }
+body.jc-clear .bev.fl { background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.3) 55%, rgba(255,255,255,.2)), #232327; }
+body.jc-clear .lside-l { background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.08) 1px, rgba(255,255,255,var(--lip, .3)) 40%, rgba(255,255,255,.06) 70%, rgba(0,0,0,.4)), #1a1a1e; }
+body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,255,.3) 0 1px, rgba(255,255,255,.1) 1px 2px, rgba(0,0,0,0) 2px 3px), #34343a; }
+
+/* ---------- Spiegelung auf dem Boden: die geschlossene Hülle gespiegelt ---------- */
+.mirror { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-style: preserve-3d; pointer-events: none;
+  transform-origin: 50% 100%; transform: translateY(3px) scaleY(-1); }
+.mirror .core { position: absolute; left: 1px; top: 1px; width: calc(100% - 2px); height: calc(100% - 2px); background: #0a0a0b; }
+.lid.solid { background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
+.mirror .face::after, .mirror .core::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,.56), rgba(0,0,0,.88) 22%, #000 40%); }
+.mirror { transition: opacity .4s; }
+.cf-item.open .mirror { opacity: 0; }
+
+/* ---------- Booklet zum Durchblättern ---------- */
+/* Einblenden: Hintergrund wird dunkel, das Booklet steigt aus der Hülle nach vorne und richtet sich auf */
+.bv { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.985); display: flex; align-items: center; justify-content: center;
+  touch-action: none; user-select: none; -webkit-user-select: none; perspective: 1400px; opacity: 0; transition: opacity .45s ease; }
+.bv.show { opacity: 1; }
+.bv[hidden] { display: none; }
+.bv-wrap { transform: translateY(26vh) scale(.42) rotateX(38deg); opacity: 0;
+  transition: transform .75s cubic-bezier(.2,.85,.25,1), opacity .45s ease; }
+.bv.ready .bv-wrap { transform: none; opacity: 1; }
+.bv-load { position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; font-size: 13px; color: rgba(235,235,245,.5);
+  opacity: 0; transition: opacity .3s .3s; pointer-events: none; }
+.bv.show:not(.ready) .bv-load { opacity: 1; }
+/* aufgeschlagenes Buch: links und rechts je eine Seite, Blätter drehen sich um den Buchrücken in der Mitte */
+.bv-book { position: relative; --par: 1; width: min(96vw, calc(62vh * 2 * var(--par))); perspective: 2200px;
+  transition: transform .7s cubic-bezier(.3,.8,.3,1); }
+/* EIN Schatten unter dem ganzen Buch (statt einem pro Seite – die haben sich beim Blättern aufaddiert) */
+.bv-book::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--shl, 50%); right: var(--shr, 0%); z-index: 0;
+  box-shadow: 0 16px 44px rgba(0,0,0,.7); transition: left .7s cubic-bezier(.3,.8,.3,1), right .7s cubic-bezier(.3,.8,.3,1); }
+.leaf { position: absolute; left: 50%; top: 0; width: 50%; height: 100%; transform-origin: 0 50%; transform-style: preserve-3d;
+  transition: transform .85s cubic-bezier(.35,.7,.3,1); }
+.leaf.turned { transform: rotateY(-180deg); }
+.leaf.turning { z-index: 500 !important; }
+.pg { position: absolute; inset: 0; background: #e9e5dc 50% 50% / cover no-repeat; -webkit-backface-visibility: hidden; backface-visibility: hidden; cursor: pointer; }
+.pg.b { transform: rotateY(180deg); }
+/* Falz: auf jeder Seite gleich stark, immer zum Buchrücken hin (rechte Seite links, linke Seite rechts) */
+.pg::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+.pg.f::after { background: linear-gradient(90deg, rgba(0,0,0,.26), rgba(0,0,0,.08) 5%, rgba(0,0,0,0) 13%); }
+.pg.b::after { background: linear-gradient(270deg, rgba(0,0,0,.26), rgba(0,0,0,.08) 5%, rgba(0,0,0,0) 13%); }
+/* während das Blatt sich dreht, wird es kurz dunkler (es neigt sich vom Licht weg) */
+.pg::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1; background: rgba(0,0,0,.4); opacity: 0; }
+.leaf.turning .pg::before { animation: turnshade .85s ease-in-out; }
+@keyframes turnshade { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---------- Ergänzungen für die App ---------- */
+/* Interpret ohne Profilbild: Name als Schriftzug auf dem Booklet */
+.booklet.text { display: flex; align-items: center; justify-content: center; padding: 10%;
+  background: linear-gradient(160deg, #2c2c2e 0%, #141416 60%, #0b0b0c 100%); }
+.booklet-name { font: 700 calc(var(--s) * .11) / 1.05 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.02em; color: #fff; text-align: center; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* fehlende Alben: Booklet grau und dunkel */
+.cf-item.missing .booklet, .cf-item.missing .bk-inlay { filter: grayscale(1) brightness(.55); }
+/* echte Titelliste auf der Rückseite – jeder Titel lässt sich antippen */
+.jc-tracks { flex: 1; min-height: 0; margin: calc(var(--s) * .03) 0 0; padding: 0; list-style: none; overflow: hidden;
+  --lh: calc(var(--s) * .58 / var(--rows, 12)); font-size: min(calc(var(--s) * .043), calc(var(--lh) * .72)); line-height: var(--lh); color: rgba(255,255,255,.92); }
+.jc-tracks.two { columns: 2; column-gap: calc(var(--s) * .04); }
+.jc-tracks li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; break-inside: avoid; cursor: pointer; }
+.jc-tracks li b { display: inline-block; min-width: 1.7em; font-weight: 600; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
+.jc-tracks li.playing { color: #fff; font-weight: 700; }
+.jc-tracks li.playing b { color: #fff; }
+.jc-hint { margin: calc(var(--s) * .04) 0 0; font-size: calc(var(--s) * .04); color: rgba(255,255,255,.6); }
+.bk-btn { border: 0; padding: 0; }
+.bk-btn.wish { background: rgba(28,28,30,.88); color: #fff; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.35), 0 1px 4px rgba(0,0,0,.6); }
+.bk-btn.wish.on svg { fill: currentColor; }
+.bk-btn.more { background: rgba(28,28,30,.88); color: #fff; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.35), 0 1px 4px rgba(0,0,0,.6); }

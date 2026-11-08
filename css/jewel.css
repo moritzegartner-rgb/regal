@@ -272,12 +272,20 @@ body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,
   touch-action: none; user-select: none; -webkit-user-select: none; perspective: 1400px; opacity: 0; transition: opacity .45s ease; }
 .bv.show { opacity: 1; }
 .bv[hidden] { display: none; }
-.bv-wrap { transform: translateY(26vh) scale(.42) rotateX(38deg); opacity: 0;
-  transition: transform .75s cubic-bezier(.2,.85,.25,1), opacity .45s ease; }
-.bv.ready .bv-wrap { transform: none; opacity: 1; }
+/* das Buch erscheint erst, wenn das herausgenommene Booklet angekommen ist */
+.bv-wrap { opacity: 0; }
+.bv.ready .bv-wrap { opacity: 1; }
+/* Zoom mit zwei Fingern: Verschiebung + Faktor, Ursprung oben links */
+.bv-zoom { transform-origin: 0 0; will-change: transform; }
+/* das herausgenommene Booklet auf dem Weg aus der Hülle (und zurück) */
+.bv-fly { position: fixed; left: 0; top: 0; z-index: 60; transform-origin: 0 0; perspective: 1400px; pointer-events: none; }
+.bv-fly-in { position: absolute; inset: 0; transform-style: preserve-3d; }
+.bv-fly .pg { box-shadow: 0 18px 50px rgba(0,0,0,.6); }
+.bv-fly.gray .pg { filter: grayscale(1); }
 .bv-load { position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; font-size: 13px; color: rgba(235,235,245,.5);
   opacity: 0; transition: opacity .3s .3s; pointer-events: none; }
 .bv.show:not(.ready) .bv-load { opacity: 1; }
+.bv.flying .bv-load { opacity: 0; transition: none; }
 /* aufgeschlagenes Buch: links und rechts je eine Seite, Blätter drehen sich um den Buchrücken in der Mitte */
 .bv-book { position: relative; --par: 1; width: min(96vw, calc(62vh * 2 * var(--par))); perspective: 2200px;
   transition: transform .7s cubic-bezier(.3,.8,.3,1); }

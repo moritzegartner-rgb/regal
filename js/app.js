@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.7.2';
+const APP_VERSION = '2.8.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -630,7 +630,9 @@ function cfSetOpen(i, on) {
 async function cfOpenBooklet(i) {
   const e = CF.entries[i];
   const sc = await jewel.findScan(entryRgid(e)).catch(() => null);
-  jewel.openBooklet(sc, bigCover(e.cover), !!e.missing);
+  // das Booklet im Deckel der aufgeklappten Hülle – von dort wird es herausgenommen
+  const src = CF.els[i]?.querySelector('.linner .bpage');
+  jewel.openBooklet(sc, bigCover(e.cover), !!e.missing, src);
 }
 
 // Eine Ebene zurück (ins Dunkle tippen, Escape)

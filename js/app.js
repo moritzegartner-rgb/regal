@@ -7,7 +7,7 @@ import * as video from './video.js';
 import * as gemini from './gemini.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.4.1';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -316,7 +316,8 @@ function render() {
     else if (sub === 'serie') renderSeries(id);
     else if (page === 'sammlung') renderLibrary();
     else renderGaps();
-  } else if (page === 'wuensche') renderWishes();
+  } else if (page === 'scan') renderScan();
+  else if (page === 'wuensche') renderWishes();
   else if (page === 'einstellungen') renderSettings();
   else location.replace('#/sammlung');
 }

@@ -655,7 +655,12 @@ function setFlip(i, deg) {
   setHint();
 }
 function setFocus(i, on) {
+  if (on && Math.abs(pos - i) > 0.002) { // steht noch schief (oder ist ein anderes Album): erst gerade einrasten lassen
+    target = i; pendingFocus = i; animate();
+    return;
+  }
   if (on) {
+    pos = target = i; layout();
     focused = i; flipDeg = 0;
     jcTransform(i);
     tweenOpen(1); // die anderen Hüllen gleiten weg
@@ -766,10 +771,11 @@ const end = () => {
   }
   // Blättern
   if (tap) {
-    if (!d.item) return;
-    const i = Number(d.item.dataset.i);
-    if (i === Math.round(target) && Math.abs(pos - i) < 0.3) setFocus(i, true);
-    else { target = i; pendingFocus = i; animate(); } // erst hinfahren, dann auswählen
+    if (!d.item) { // daneben getippt, während noch etwas schief steht: sauber einrasten
+      if (Math.abs(pos - Math.round(pos)) > 0.002) { target = clampI(Math.round(pos)); animate(); }
+      return;
+    }
+    setFocus(Number(d.item.dataset.i), true); // fährt das Album erst ganz gerade nach vorne, dann wird es ausgewählt
     return;
   }
   pendingFocus = -1;

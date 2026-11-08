@@ -53,7 +53,7 @@
     transform-origin: 0 50% calc(var(--t) / 2 - var(--L) / 2); transition: transform .95s cubic-bezier(.35,.85,.3,1); }
   .item.open .lidg { transform: rotateY(-178deg); }
   /* Innenteile nur, wenn die Hülle offen ist (spart Rechenarbeit) */
-  .item:not(.inner) .disc, .item:not(.inner) .linner, .item:not(.inner) .bframe { display: none; }
+  .item:not(.inner) .disc, .item:not(.inner) .linner, .item:not(.inner) .bframe, .item:not(.inner) .hinge { display: none; }
 
   /* gerundete Kanten als schmale Schrägflächen */
   .bev { width: calc(var(--b) * 1.4142 + 2 * var(--e)); }
@@ -183,6 +183,32 @@
   .jc.has-medium .face.disc { background: var(--medium) 50% 50% / cover no-repeat, #c8cbd1; }
   .disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.4);
     background: conic-gradient(from var(--da, 0deg), rgba(255,255,255,0), rgba(160,220,255,.14), rgba(255,255,255,.2), rgba(255,210,150,.12), rgba(255,255,255,0) 55%); }
+
+  /* ---------- Innenwände: von innen sieht man die Rückseite der Einleger-Rücken (klar) bzw. den schwarzen Träger (klassisch) ---------- */
+  .iwall { --iw: calc(var(--t) * 0.69); background: linear-gradient(90deg, #151517, #0b0b0c); }
+  .face.iwall-l, .face.iwall-r { width: var(--iw); }
+  .iwall-l { left: calc(var(--b) - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateY(90deg); }
+  .iwall-r { left: calc(100% - var(--b) - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateY(-90deg); }
+  .face.iwall-t, .face.iwall-b { left: 0; width: 100%; height: var(--iw); }
+  .iwall-t { top: calc(1px - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateX(-90deg); }
+  .iwall-b { top: calc(var(--s) - 1px - var(--iw) / 2); transform: translateZ(calc(var(--t) * -0.095)) rotateX(90deg); }
+  .stage.clear .iwall-l, .stage.clear .iwall-r { background: linear-gradient(rgba(0,0,0,.25), rgba(0,0,0,.25)), var(--img) 0% 55% / 520% auto no-repeat, #2a2a2e; }
+  /* echte Innenseite: die äußeren Streifen des Tray-Fotos sind genau die Innenseiten der Rücken */
+  .stage.clear .jc.has-tspine .iwall-l { background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.15)), var(--tray) 0% 50% / var(--tsw) 94.4% no-repeat, #2a2a2e; }
+  .stage.clear .jc.has-tspine .iwall-r { background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.15)), var(--tray) 100% 50% / var(--tsw) 94.4% no-repeat, #2a2a2e; }
+  .stage.clear .iwall-t, .stage.clear .iwall-b { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.06)), #26262b; }
+  /* Innenwände des Deckels */
+  .face.liw { width: var(--lw); background: linear-gradient(90deg, rgba(255,255,255,.2), rgba(255,255,255,.06)), #1b1b1f; }
+  .liw-l { left: calc(var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(90deg); }
+  .liw-r { left: calc(100% - var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(-90deg); }
+  /* Scharnier: verbindet Deckel und Unterteil – oben und unten die Gelenke, in denen der Deckel hängt */
+  .face.hinge { left: calc(var(--b) * -1.6); width: calc(var(--b) * 3.2); transform: translateZ(calc(var(--t) / 2 - var(--L) / 2));
+    background: linear-gradient(90deg, rgba(255,255,255,.3), rgba(255,255,255,.08) 30%, rgba(0,0,0,.55) 50%, rgba(255,255,255,.08) 70%, rgba(255,255,255,.3)), #1c1c20; }
+  .knuckle { position: absolute; left: -120%; right: -120%; height: 6.5%; border-radius: 3px;
+    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.5) 28%, rgba(255,255,255,.14) 52%, rgba(0,0,0,.45) 78%, rgba(255,255,255,.22)), #2c2c31;
+    box-shadow: 0 0 0 .5px rgba(255,255,255,.38), 0 1px 3px rgba(0,0,0,.6); }
+  .knuckle.t { top: 1.4%; } .knuckle.b { bottom: 1.4%; }
+  .knuckle::after { content: ""; position: absolute; left: 47%; width: 6%; top: 15%; bottom: 15%; border-radius: 2px; background: rgba(0,0,0,.55); }
 
   /* ---------- Seiten: Bodenplatte, Rücken des Einlegers, Schlitz, Deckelkante ---------- */
   .side { overflow: hidden; background: #0d0d0e; }
@@ -491,6 +517,8 @@ stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
     <div class="face trayp">${TRAY}</div>
     <div class="face disc"></div>
     <div class="face bframe"></div>
+    <div class="face iwall iwall-l"></div><div class="face iwall iwall-r"></div><div class="face iwall iwall-t"></div><div class="face iwall iwall-b"></div>
+    <div class="face hinge"><i class="knuckle t"></i><i class="knuckle b"></i></div>
     ${backHtml(a, i, true)}
     <div class="face bev bl"></div><div class="face bev br"></div>
     ${sideHtml(a, 'l', true)}${sideHtml(a, 'r', true)}
@@ -499,6 +527,7 @@ stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
       ${frontHtml(a, i, false)}
       <div class="face bev fl"></div><div class="face bev fr"></div>
       ${LSIDES}<div class="face ltop"></div><div class="face lbot"></div>
+      <div class="face liw liw-l"></div><div class="face liw liw-r"></div>
       ${LID_INNER}
     </div>
     <div class="mirror"><div class="core"></div>${frontHtml(a, i, true)}
@@ -756,6 +785,11 @@ function applyScan(i, sc) {
     jc.style.setProperty('--tray', `url("${sc.tray}")`);
     jc.style.setProperty('--trs', `${((118 * sc.trayRatio) / 142 * 100).toFixed(1)}% 94.4%`);
     jc.classList.add('has-tray');
+    if (sc.trayRatio > 1.22) { // Foto enthält die Innenseiten der Rücken (links/rechts je ≈ 6,5 mm)
+      const tw = 118 * sc.trayRatio, f = Math.min(0.065, Math.max(0.03, (tw - 138) / 2 / tw));
+      jc.style.setProperty('--tsw', `${(100 / f).toFixed(1)}%`);
+      jc.classList.add('has-tspine');
+    }
   }
   if (sc.medium) { jc.style.setProperty('--medium', `url("${sc.medium}")`); jc.classList.add('has-medium'); }
   if (sc.booklet?.length) {

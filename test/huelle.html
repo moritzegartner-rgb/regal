@@ -22,9 +22,9 @@
   .info b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.45px; }
   .info span { font-size: 15px; color: rgba(235,235,245,.6); }
   .info small { display: block; margin-top: 4px; font-size: 12px; color: rgba(235,235,245,.38); }
-  .opts { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 18px); display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  .row { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .row small { font-size: 13px; color: rgba(235,235,245,.6); }
+  .opts { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 14px); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .row small { width: 50px; text-align: right; font-size: 13px; color: rgba(235,235,245,.6); }
   .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05)); box-shadow: inset 0 1px .5px rgba(255,255,255,.42), inset 0 0 0 .5px rgba(255,255,255,.12); }
   .seg button { border: 0; background: none; color: rgba(235,235,245,.6); font: 600 15px -apple-system, system-ui, sans-serif; padding: 8px 16px; border-radius: 999px; }
   .seg button.on { background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.14)); color: #fff; }
@@ -99,7 +99,7 @@
   .rim-l { position: absolute; left: 0; top: 0; bottom: 0; width: .6%; background: linear-gradient(90deg, rgba(255,255,255,.45), rgba(255,255,255,.1)); }
   /* rechte Deckelkante: Schatten neben dem Booklet, runder Glanz-Wulst, feine dunkle Linie, klarer Außenrand */
   .rim-r { position: absolute; right: 0; top: 0; bottom: 0; width: 3.6%;
-    background: linear-gradient(90deg, rgba(0,0,0,.85) 0 22%, rgba(255,255,255,.08) 22%, rgba(255,255,255,var(--lip, .35)) 42%, rgba(255,255,255,.1) 60%,
+    background: linear-gradient(90deg, rgba(0,0,0,var(--tdark, .85)) 0 22%, rgba(255,255,255,.08) 22%, rgba(255,255,255,var(--lip, .35)) 42%, rgba(255,255,255,.1) 60%,
       rgba(0,0,0,.75) 60% 70%, rgba(255,255,255,.12) 70%, rgba(255,255,255,.42) 100%), #121214; }
   /* Stufe im Deckel zwischen geriffeltem Rand und Booklet */
   .step { position: absolute; left: 8.4%; width: 1.1%; top: 0; bottom: 0;
@@ -213,6 +213,21 @@
   .jc.has-spine .side-r .inlay { background-position: 0 50%; }
   .jc.has-spine .spine { display: none; }
 
+  /* ---------- Klare Hülle (Clear Tray): der Träger ist durchsichtig, darunter liegt die bedruckte Innenseite des Einlegers ---------- */
+  .stage.clear { --tdark: .3; }
+  /* ohne Foto der Innenseite: eine Textur aus dem Cover (stark vergrößerter Ausschnitt) */
+  .stage.clear .tray { background: linear-gradient(rgba(0,0,0,.2), rgba(0,0,0,.2)), var(--img) 0% 55% / 520% auto no-repeat, #1c1c1e; }
+  /* mit Foto („Tray“ im Cover Art Archive): Einleger 118 mm hoch, mittig unter dem Träger */
+  .stage.clear .jc.has-tray .tray { background: linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.12)), var(--tray) 50% 50% / var(--trs) no-repeat, #0b0b0c; }
+  /* Scharnier-Teil: klares, geriffeltes Plastik statt schwarz */
+  .stage.clear .ribs { background: repeating-linear-gradient(90deg, rgba(255,255,255,.2) 0 1px, rgba(255,255,255,.04) 1px 2px, rgba(0,0,0,.14) 2px 3px);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), inset -1px 0 0 rgba(255,255,255,.28); }
+  .stage.clear .gloss:not(.bk) { left: 0; }
+  .stage.clear .bev.fl { background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.3) 55%, rgba(255,255,255,.2)), #232327; }
+  .stage.clear .side-l .lidedge { background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.08) 1px, rgba(255,255,255,var(--lip, .3)) 40%, rgba(255,255,255,.06) 70%, rgba(0,0,0,.4)), #1a1a1e; }
+  .stage.clear .side-l .wall { right: 0; }
+  .stage.clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,255,.3) 0 1px, rgba(255,255,255,.1) 1px 2px, rgba(0,0,0,0) 2px 3px), #34343a; }
+
   /* ---------- Spiegelung auf dem Boden: die ganze Hülle (mit Rücken) gespiegelt ---------- */
   .mirror { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-style: preserve-3d; pointer-events: none;
     transform-origin: 50% 100%; transform: translateY(3px) scaleY(-1); }
@@ -226,6 +241,9 @@
 <div class="stage" id="stage"></div>
 <div class="info"><b id="t"></b><span id="u"></span><small id="src"></small></div>
 <div class="opts">
+  <div class="row"><small>Hülle</small>
+    <div class="seg" id="case"><button data-v="classic" class="on">Klassisch</button><button data-v="clear">Klar</button></div>
+  </div>
   <div class="row"><small>Ansicht</small>
     <div class="seg" id="mode"><button data-v="flow" class="on">Blättern</button><button data-v="inspect">Von nah drehen</button></div>
   </div>
@@ -548,13 +566,15 @@ async function mbGet(path, tries = 4) { // MusicBrainz erlaubt 1 Anfrage pro Sek
 const COUNTRY = ['DE', 'XE', 'AT', 'CH', 'EU', 'GB', 'US'];
 const rank = (r) => { const k = COUNTRY.indexOf(r.country); return k < 0 ? 99 : k; };
 async function findScan(rgid) {
-  const key = `regal-scan-v2:${rgid}`;
+  const key = `regal-scan-v4:${rgid}`;
   try { const c = localStorage.getItem(key); if (c) return JSON.parse(c); } catch {}
   const d = await mbGet(`release?release-group=${rgid}&fmt=json&limit=100&inc=media`);
-  const cds = (d.releases || []).filter((r) => r['cover-art-archive']?.back
-    && (r.media || []).some((m) => /CD$/.test(m.format || ''))).sort((a, b) => rank(a) - rank(b));
+  const hasBack = (r) => (r['cover-art-archive']?.back ? 0 : 1);
+  const cds = (d.releases || []).filter((r) => r['cover-art-archive']?.artwork
+    && (r.media || []).some((m) => /CD$/.test(m.format || '')))
+    .sort((a, b) => hasBack(a) - hasBack(b) || rank(a) - rank(b));
   // Bilderlisten der besten Kandidaten gleichzeitig holen (das Cover Art Archive hat kein 1-pro-Sekunde-Limit)
-  const cand = cds.slice(0, 6);
+  const cand = cds.slice(0, 8);
   const lists = await Promise.all(cand.map((r) => fetch(`https://coverartarchive.org/release/${r.id}`)
     .then((x) => x.json()).catch(() => null)));
   let best = null;
@@ -563,23 +583,36 @@ async function findScan(rgid) {
       if (!im.types.includes('Back')) continue;
       const score = (im.types.includes('Spine') ? 2 : 0) + (im.approved ? 1 : 0);
       if (!best || score > best.score) {
-        best = { score, spineTag: im.types.includes('Spine'), country: r.country || '', date: r.date || '',
+        best = { score, k, spineTag: im.types.includes('Spine'), country: r.country || '', date: r.date || '',
           small: https(im.thumbnails?.['500'] || im.thumbnails?.large || im.image),
           big: im.thumbnails?.['1200'] ? https(im.thumbnails['1200']) : '' }; // nie die (oft riesige) Originaldatei
       }
     }
   });
-  if (best) { // Seitenverhältnis messen: mit Rücken ≈ 151:118, nur Rückseite ≈ 138:118
-    const img = new Image();
-    img.src = best.small;
-    await img.decode();
-    best.ratio = img.naturalWidth / img.naturalHeight;
+  // Innenseite des Einlegers (sieht man bei klaren Hüllen) – am liebsten von derselben Ausgabe wie die Rückseite
+  // reine Innenseiten-Fotos zuerst (manche Fotos sind als „Back + Tray“ markiert und zeigen eigentlich die Rückseite)
+  const pure = (k) => (lists[k]?.images || []).find((im) => im.types.includes('Tray') && !im.types.includes('Back'));
+  const anyTray = (k) => (lists[k]?.images || []).find((im) => im.types.includes('Tray'));
+  let tray = (best && pure(best.k)) || null;
+  for (let k = 0; k < cand.length && !tray; k++) tray = pure(k);
+  for (let k = 0; k < cand.length && !tray; k++) tray = anyTray(k);
+  const ratioOf = async (url) => { const img = new Image(); img.src = url; await img.decode(); return img.naturalWidth / img.naturalHeight; };
+  if (best) best.ratio = await ratioOf(best.small); // mit Rücken ≈ 151:118, nur Rückseite ≈ 138:118
+  if (tray) {
+    const url = https(tray.thumbnails?.['500'] || tray.thumbnails?.large || tray.image);
+    try { best = { ...(best || {}), tray: url, trayRatio: await ratioOf(url) }; } catch {}
   }
   try { localStorage.setItem(key, JSON.stringify(best)); } catch {}
   return best;
 }
 function applyScan(i, sc) {
   const jc = els[i].firstElementChild;
+  if (sc.tray) { // Einleger-Innenseite: 118 mm hoch, Breite aus dem Seitenverhältnis, Hülle 142 × 125 mm
+    jc.style.setProperty('--tray', `url("${sc.tray}")`);
+    jc.style.setProperty('--trs', `${((118 * sc.trayRatio) / 142 * 100).toFixed(1)}% 94.4%`);
+    jc.classList.add('has-tray');
+  }
+  if (!sc.small) return;
   const hasSpine = sc.ratio > 1.22;
   const total = 118 * sc.ratio; // Breite in mm, wenn die Höhe 118 mm ist
   const sp = hasSpine ? Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total)) : 0;
@@ -594,11 +627,12 @@ function applyScan(i, sc) {
 function showSrc() {
   const cur = clampI(Math.round(pos)), sc = SCAN[cur];
   const el = document.getElementById('src');
+  const inner = stage.classList.contains('clear') ? ` · Innenseite: ${sc?.tray ? 'echt' : 'Cover-Textur'}` : '';
   if (sc === undefined) el.textContent = 'Rückseite: wird gesucht …';
-  else if (!sc) el.textContent = 'Rückseite: kein Foto gefunden – selbst gebaut';
+  else if (!sc?.small) el.textContent = `Rückseite: kein Foto gefunden – selbst gebaut${inner}`;
   else {
     const where = [sc.country, (sc.date || '').slice(0, 4)].filter(Boolean).join(' ');
-    el.textContent = `Rückseite: echtes Foto${where ? ` (CD ${where})` : ''} · Rücken: ${sc.ratio > 1.22 ? 'echt' : 'Cover-Streifen'}`;
+    el.textContent = `Rückseite: echtes Foto${where ? ` (CD ${where})` : ''} · Rücken: ${sc.ratio > 1.22 ? 'echt' : 'Cover-Streifen'}${inner}`;
   }
 }
 function loadScans() { // alle gleichzeitig starten; die MusicBrainz-Warteschlange hält trotzdem 1 Anfrage/Sekunde ein
@@ -613,6 +647,15 @@ function loadScans() { // alle gleichzeitig starten; die MusicBrainz-Warteschlan
 }
 
 seg('sk', (v) => document.documentElement.style.setProperty('--sk', v));
+// Klassisch (schwarzer Träger) oder Klar (durchsichtiger Träger) – Auswahl wird gemerkt
+function setCase(v) {
+  stage.classList.toggle('clear', v === 'clear');
+  document.querySelectorAll('#case button').forEach((x) => x.classList.toggle('on', x.dataset.v === v));
+  try { localStorage.setItem('regal-case', v); } catch {}
+  showSrc();
+}
+seg('case', setCase);
+try { if (localStorage.getItem('regal-case') === 'clear') setCase('clear'); } catch {}
 seg('mode', (v) => {
   cancelAnimationFrame(raf);
   mode = v;

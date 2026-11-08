@@ -220,8 +220,9 @@
   /* mit Foto („Tray“ im Cover Art Archive): Einleger 118 mm hoch, mittig unter dem Träger */
   .stage.clear .jc.has-tray .tray { background: linear-gradient(rgba(0,0,0,.12), rgba(0,0,0,.12)), var(--tray) 50% 50% / var(--trs) no-repeat, #0b0b0c; }
   /* Scharnier-Teil: klares, geriffeltes Plastik statt schwarz */
-  .stage.clear .ribs { background: repeating-linear-gradient(90deg, rgba(255,255,255,.2) 0 1px, rgba(255,255,255,.04) 1px 2px, rgba(0,0,0,.14) 2px 3px);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), inset -1px 0 0 rgba(255,255,255,.28); }
+  /* Scharnier-Teil bei klaren Hüllen: glattes Klarplastik (keine Riffelung), nur feine Kanten */
+  .stage.clear .ribs { background: linear-gradient(90deg, rgba(255,255,255,.1), rgba(255,255,255,.03) 30%, rgba(255,255,255,0) 60%, rgba(255,255,255,.06));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), inset -1px 0 0 rgba(255,255,255,.26); }
   .stage.clear .gloss:not(.bk) { left: 0; }
   .stage.clear .bev.fl { background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.3) 55%, rgba(255,255,255,.2)), #232327; }
   .stage.clear .side-l .lidedge { background: linear-gradient(270deg, rgba(255,255,255,.5) 0 1px, rgba(255,255,255,.08) 1px, rgba(255,255,255,var(--lip, .3)) 40%, rgba(255,255,255,.06) 70%, rgba(0,0,0,.4)), #1a1a1e; }
@@ -566,7 +567,7 @@ async function mbGet(path, tries = 4) { // MusicBrainz erlaubt 1 Anfrage pro Sek
 const COUNTRY = ['DE', 'XE', 'AT', 'CH', 'EU', 'GB', 'US'];
 const rank = (r) => { const k = COUNTRY.indexOf(r.country); return k < 0 ? 99 : k; };
 async function findScan(rgid) {
-  const key = `regal-scan-v4:${rgid}`;
+  const key = `regal-scan-v5:${rgid}`;
   try { const c = localStorage.getItem(key); if (c) return JSON.parse(c); } catch {}
   const d = await mbGet(`release?release-group=${rgid}&fmt=json&limit=100&inc=media`);
   const hasBack = (r) => (r['cover-art-archive']?.back ? 0 : 1);
@@ -577,36 +578,42 @@ async function findScan(rgid) {
   const cand = cds.slice(0, 8);
   const lists = await Promise.all(cand.map((r) => fetch(`https://coverartarchive.org/release/${r.id}`)
     .then((x) => x.json()).catch(() => null)));
-  let best = null;
-  cand.forEach((r, k) => { // bei Gleichstand gewinnt die Ausgabe weiter vorne (DE vor EU vor GB vor US …)
-    for (const im of lists[k]?.images || []) {
-      if (!im.types.includes('Back')) continue;
-      const score = (im.types.includes('Spine') ? 2 : 0) + (im.approved ? 1 : 0);
-      if (!best || score > best.score) {
-        best = { score, k, spineTag: im.types.includes('Spine'), country: r.country || '', date: r.date || '',
-          small: https(im.thumbnails?.['500'] || im.thumbnails?.large || im.image),
-          big: im.thumbnails?.['1200'] ? https(im.thumbnails['1200']) : '' }; // nie die (oft riesige) Originaldatei
-      }
-    }
+  // Alles von EINER Ausgabe nehmen – so gehören Cover, Rückseite, Rücken und Innenseite zum selben Artwork.
+  // Bei Gleichstand gewinnt die Ausgabe weiter vorne (DE vor EU vor GB vor US …).
+  const usable = (im) => !im.types.includes('Raw/Unedited') && !im.types.includes('Watermark');
+  let pick = null;
+  cand.forEach((r, k) => {
+    const ims = (lists[k]?.images || []).filter(usable);
+    const front = ims.find((im) => im.types.includes('Front') && !im.types.includes('Back'));
+    const backs = ims.filter((im) => im.types.includes('Back') && !im.types.includes('Front'));
+    const back = backs.find((im) => im.types.includes('Spine')) || backs[0];
+    const tray = ims.find((im) => im.types.includes('Tray') && !im.types.includes('Back'));
+    if (!back) return;
+    const score = (back.types.includes('Spine') ? 4 : 2) + (front ? 2 : 0) + (tray ? 1 : 0);
+    if (!pick || score > pick.score) pick = { score, r, front, back, tray };
   });
-  // Innenseite des Einlegers (sieht man bei klaren Hüllen) – am liebsten von derselben Ausgabe wie die Rückseite
-  // reine Innenseiten-Fotos zuerst (manche Fotos sind als „Back + Tray“ markiert und zeigen eigentlich die Rückseite)
-  const pure = (k) => (lists[k]?.images || []).find((im) => im.types.includes('Tray') && !im.types.includes('Back'));
-  const anyTray = (k) => (lists[k]?.images || []).find((im) => im.types.includes('Tray'));
-  let tray = (best && pure(best.k)) || null;
-  for (let k = 0; k < cand.length && !tray; k++) tray = pure(k);
-  for (let k = 0; k < cand.length && !tray; k++) tray = anyTray(k);
-  const ratioOf = async (url) => { const img = new Image(); img.src = url; await img.decode(); return img.naturalWidth / img.naturalHeight; };
-  if (best) best.ratio = await ratioOf(best.small); // mit Rücken ≈ 151:118, nur Rückseite ≈ 138:118
-  if (tray) {
-    const url = https(tray.thumbnails?.['500'] || tray.thumbnails?.large || tray.image);
-    try { best = { ...(best || {}), tray: url, trayRatio: await ratioOf(url) }; } catch {}
+  let res = null;
+  if (pick) {
+    const url = (im, size = '500') => https(im.thumbnails?.[size] || im.thumbnails?.large || im.image);
+    const ratioOf = async (u) => { const img = new Image(); img.src = u; await img.decode(); return img.naturalWidth / img.naturalHeight; };
+    res = { country: pick.r.country || '', date: pick.r.date || '', spineTag: pick.back.types.includes('Spine'),
+      small: url(pick.back), big: pick.back.thumbnails?.['1200'] ? https(pick.back.thumbnails['1200']) : '', // nie die (oft riesige) Originaldatei
+      front: pick.front ? url(pick.front) : '', frontSmall: pick.front ? url(pick.front, '250') : '' };
+    res.ratio = await ratioOf(res.small); // mit Rücken ≈ 151:118, nur Rückseite ≈ 138:118
+    if (pick.tray) { // Innenseite des Einlegers (sieht man bei klaren Hüllen)
+      res.tray = url(pick.tray);
+      try { res.trayRatio = await ratioOf(res.tray); } catch { delete res.tray; }
+    }
   }
-  try { localStorage.setItem(key, JSON.stringify(best)); } catch {}
-  return best;
+  try { localStorage.setItem(key, JSON.stringify(res)); } catch {}
+  return res;
 }
 function applyScan(i, sc) {
   const jc = els[i].firstElementChild;
+  if (sc.front) { // Cover derselben Ausgabe wie Rückseite und Innenseite
+    jc.querySelectorAll('.booklet').forEach((el) => { el.style.backgroundImage = `url("${sc.front}")`; });
+    jc.style.setProperty('--img', `url("${sc.frontSmall || sc.front}")`);
+  }
   if (sc.tray) { // Einleger-Innenseite: 118 mm hoch, Breite aus dem Seitenverhältnis, Hülle 142 × 125 mm
     jc.style.setProperty('--tray', `url("${sc.tray}")`);
     jc.style.setProperty('--trs', `${((118 * sc.trayRatio) / 142 * 100).toFixed(1)}% 94.4%`);
@@ -627,13 +634,13 @@ function applyScan(i, sc) {
 function showSrc() {
   const cur = clampI(Math.round(pos)), sc = SCAN[cur];
   const el = document.getElementById('src');
-  const inner = stage.classList.contains('clear') ? ` · Innenseite: ${sc?.tray ? 'echt' : 'Cover-Textur'}` : '';
-  if (sc === undefined) el.textContent = 'Rückseite: wird gesucht …';
-  else if (!sc?.small) el.textContent = `Rückseite: kein Foto gefunden – selbst gebaut${inner}`;
-  else {
-    const where = [sc.country, (sc.date || '').slice(0, 4)].filter(Boolean).join(' ');
-    el.textContent = `Rückseite: echtes Foto${where ? ` (CD ${where})` : ''} · Rücken: ${sc.ratio > 1.22 ? 'echt' : 'Cover-Streifen'}${inner}`;
-  }
+  const clear = stage.classList.contains('clear');
+  if (sc === undefined) { el.textContent = 'Echte Bilder: werden gesucht …'; return; }
+  if (!sc) { el.textContent = `Keine Fotos gefunden – selbst gebaut${clear ? ' · Innenseite: Cover-Textur' : ''}`; return; }
+  const where = [sc.country, (sc.date || '').slice(0, 4)].filter(Boolean).join(' ');
+  const parts = [sc.front && 'Cover', 'Rückseite', sc.ratio > 1.22 && 'Rücken', clear && sc.tray && 'Innenseite'].filter(Boolean);
+  const own = [sc.ratio > 1.22 ? '' : 'Rücken: Cover-Streifen', clear && !sc.tray ? 'Innenseite: Cover-Textur' : ''].filter(Boolean);
+  el.textContent = `Alles von der CD${where ? ` ${where}` : ''}: ${parts.join(', ')}${own.length ? ` · ${own.join(' · ')}` : ''}`;
 }
 function loadScans() { // alle gleichzeitig starten; die MusicBrainz-Warteschlange hält trotzdem 1 Anfrage/Sekunde ein
   const order = ALBUMS.map((_, i) => i).sort((a, b) => Math.abs(a - pos) - Math.abs(b - pos));

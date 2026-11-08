@@ -7,7 +7,7 @@ import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.6.1';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -251,31 +251,6 @@ function render() {
   else if (page === 'scan') renderScan();
   else if (page === 'einstellungen') renderSettings();
   else location.replace('#/');
-}
-
-// Seitenwechsel mit Animation wie in iOS: tiefer = neue Seite schiebt sich von rechts herein,
-// zurück = die Seite gleitet nach rechts weg und die vorige kommt von links zurück.
-// Tiefe: Start 0 · Alben eines Interpreten / Menü 1 · Listen 2 · Interpretenseite 3
-function depthOf([page, id]) {
-  if (page === '') return 0;
-  if (page === 'flow' || page === 'menu') return 1;
-  if (page === 'interpreten' && id) return 3;
-  return 2;
-}
-let shownRoute = null;
-
-function navigate() {
-  const next = route();
-  const prev = shownRoute;
-  shownRoute = next;
-  const a = prev ? depthOf(prev) : 0;
-  const b = depthOf(next);
-  const dir = !prev || a === b ? '' : (b > a ? 'forward' : 'back');
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!dir || reduce || !document.startViewTransition) { render(); return; }
-  document.documentElement.dataset.nav = dir;
-  const t = document.startViewTransition(() => render());
-  t.finished.finally(() => { delete document.documentElement.dataset.nav; });
 }
 
 // =====================================================================
@@ -2049,7 +2024,7 @@ async function init() {
     toast(`Der Speicher konnte nicht geöffnet werden: ${e.message}`, 'error');
   }
   changed();
-  window.addEventListener('hashchange', navigate);
+  window.addEventListener('hashchange', render);
   // Beim Scrollen: kleiner Titel + weicher Glas-Rand oben (wie iOS)
   const onScroll = () => {
     document.body.classList.toggle('scrolled', window.scrollY > 4);
@@ -2058,7 +2033,7 @@ async function init() {
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('hashchange', () => requestAnimationFrame(onScroll));
   // Zurück von der Spotify-Anmeldung? Sonst normal starten
-  if (!(await handleSpotifyCallback())) { shownRoute = route(); render(); }
+  if (!(await handleSpotifyCallback())) render();
   // Wenn die App wieder sichtbar wird (z. B. nach der Anmeldung in Safari): Verbindung neu prüfen
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;

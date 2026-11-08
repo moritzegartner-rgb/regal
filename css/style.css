@@ -886,18 +886,6 @@ body.np-paused .eq i { animation-play-state: paused; transform: scaleY(0.35); }
 .np-vol-hint { flex: 1; text-align: center; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); }
 .np-vol.off .np-range, .np-vol.off .np-vol-ic { display: none; }
 
-/* Seitenwechsel wie in iOS (View Transitions): tiefer = von rechts herein, zurück = nach rechts hinaus */
-::view-transition-old(root), ::view-transition-new(root) {
-  animation-duration: 0.45s; animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1); animation-fill-mode: both;
-}
-html[data-nav="forward"]::view-transition-old(root) { animation-name: vt-push-out; }
-html[data-nav="forward"]::view-transition-new(root) { animation-name: vt-push-in; box-shadow: -18px 0 40px rgba(0, 0, 0, 0.6); }
-html[data-nav="back"]::view-transition-old(root) { animation-name: vt-pop-out; z-index: 2; box-shadow: -18px 0 40px rgba(0, 0, 0, 0.6); }
-html[data-nav="back"]::view-transition-new(root) { animation-name: vt-pop-in; }
-@keyframes vt-push-in { from { transform: translateX(100%); } to { transform: none; } }
-@keyframes vt-push-out { from { transform: none; } to { transform: translateX(-28%); opacity: 0.35; } }
-@keyframes vt-pop-out { from { transform: none; } to { transform: translateX(100%); } }
-@keyframes vt-pop-in { from { transform: translateX(-28%); opacity: 0.35; } to { transform: none; opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

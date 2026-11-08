@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Test: CD-Hülle</title>
-<!-- Test zum Ausprobieren: klassische Jewel Case (geriffelter schwarzer Rand) möglichst nah am Original –
-     Öffnungs-Schlitz, abgerundete Kanten, Scharnier-Zapfen, Halte-Nasen, Mikrokratzer, Abrieb, Fingerabdruck,
-     wandernder Lichtreflex. Gehört nicht zur App, nur zum Anschauen auf dem iPhone. -->
+<!-- Test zum Ausprobieren: klassische Jewel Case möglichst nah am Original –
+     geschlossener 3D-Körper (keine Lücken an den Kanten), Öffnungs-Schlitz, abgerundete Kanten, Scharnier,
+     Halte-Nasen, matter geriffelter Rand, Mikrokratzer, Abrieb, Fingerabdruck, wandernder Lichtreflex,
+     echte Rückseite mit Titelliste, Rücken aus dem linken Cover-Streifen, Spiegelung inkl. Rücken.
+     Gehört nicht zur App, nur zum Anschauen auf dem iPhone. -->
 <style>
   :root { color-scheme: dark; --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -27,42 +29,48 @@
   .seg button.on { background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.14)); color: #fff; }
 
   /* ============ Jewel Case – Maße wie im Original: 142 × 125 × 10,4 mm ============ */
-  .jc { --s: 200px; --w: calc(var(--s) * 1.136); --t: calc(var(--s) * 0.083); --b: calc(var(--t) * 0.24);
+  /* --b: Rundung der senkrechten Kanten, --e: Überlappung der Flächen (damit an den Kanten nichts durchscheint) */
+  .jc { --s: 200px; --w: calc(var(--s) * 1.136); --t: calc(var(--s) * 0.083); --b: calc(var(--t) * 0.14); --e: .75px;
     position: absolute; width: var(--w); height: var(--s); left: calc(var(--w) / -2); top: calc(var(--s) / -2);
-    transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,1.25,.4,1); }
-  .item.flipped .jc { transform: rotateY(180deg) scale(1.2); }
+    transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,1.2,.4,1); }
+  .item.flipped .jc { transform: rotateY(180deg) scale(1.3); }
+  .stage.inspect .item.flipped .jc { transform: rotateY(180deg); }
   .face { position: absolute; top: 0; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
-  /* Deckel vorne – die senkrechten Kanten sind abgeschrägt/gerundet (eigene schmale Flächen) */
-  .front { left: var(--b); width: calc(100% - 2 * var(--b)); transform: translateZ(calc(var(--t) / 2)); }
-  .bev-l, .bev-r { width: calc(var(--b) * 1.4142); border-radius: 1.5px; }
-  .bev-l { left: calc(var(--b) * -0.2071); transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(-45deg);
-    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,var(--bvl, .2)) 55%, rgba(255,255,255,.12)), #161618; }
-  .bev-r { left: calc(100% - var(--b) * 1.2071); transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(45deg);
-    background: linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.05)), #161618; }
-  .side-l { left: calc((var(--t) - var(--b)) / -2); width: calc(var(--t) - var(--b)); transform: translateZ(calc(var(--b) / -2)) rotateY(-90deg); }
-  .side-r { left: calc(100% - (var(--t) - var(--b)) / 2); width: calc(var(--t) - var(--b)); transform: translateZ(calc(var(--b) / -2)) rotateY(90deg); }
-  .face.top-f, .face.bot-f { left: 0; width: 100%; height: var(--t); }
+  /* undurchsichtiger Kern in der Mitte: fängt jeden Blick durch Kanten ab */
+  .core { position: absolute; left: 1px; top: 1px; width: calc(100% - 2px); height: calc(100% - 2px); background: #0a0a0b; }
+  .front, .back { left: calc(var(--b) - var(--e)); width: calc(100% - 2 * var(--b) + 2 * var(--e)); }
+  .front { transform: translateZ(calc(var(--t) / 2)); }
+  .back { transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
+  /* gerundete Kanten als schmale Schrägflächen */
+  .bev { width: calc(var(--b) * 1.4142 + 2 * var(--e)); }
+  .bev.fl, .bev.bl { left: calc(var(--b) * -0.2071 - var(--e)); }
+  .bev.fr, .bev.br { left: calc(100% - var(--b) * 1.2071 - var(--e)); }
+  .bev.fl { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(-45deg); background: linear-gradient(90deg, #19191b, #222225 55%, #1c1c1e); }
+  .bev.bl { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(-135deg); background: linear-gradient(90deg, #1c1c1e, #222225 45%, #19191b); }
+  .bev.fr { transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(45deg);
+    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.05)), #161618; }
+  .bev.br { transform: translateZ(calc((var(--b) - var(--t)) / 2)) rotateY(135deg);
+    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.2) 55%, rgba(255,255,255,.1)), #161618; }
+  .side-l, .side-r { width: calc(var(--t) - 2 * var(--b) + 2 * var(--e)); }
+  .side-l { left: calc((var(--t) - 2 * var(--b)) / -2 - var(--e)); transform: rotateY(-90deg); }
+  .side-r { left: calc(100% - (var(--t) - 2 * var(--b)) / 2 - var(--e)); transform: rotateY(90deg); }
+  .face.top-f, .face.bot-f { left: 0; width: 100%; height: var(--t);
+    clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b)), 0 var(--b)); }
   .face.top-f { top: calc(var(--t) / -2); transform: rotateX(90deg);
-    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b)));
-    background: linear-gradient(0deg, rgba(255,255,255,.32), rgba(255,255,255,.08) 7%, rgba(255,255,255,.05) 25%, #000 25% 27.5%, rgba(255,255,255,.2) 27.5% 30%, rgba(255,255,255,.06) 33%, rgba(255,255,255,.04) 92%, rgba(255,255,255,.14)), #111113; }
+    background: linear-gradient(0deg, rgba(255,255,255,.3), rgba(255,255,255,.08) 7%, rgba(255,255,255,.05) 25%, #000 25% 27.5%, rgba(255,255,255,.2) 27.5% 30%, rgba(255,255,255,.06) 33%, rgba(255,255,255,.04) 92%, rgba(255,255,255,.14)), #111113; }
   .face.bot-f { top: calc(var(--s) - var(--t) / 2); transform: rotateX(-90deg);
-    clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% 100%, 0 100%, 0 var(--b));
     background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06) 7%, rgba(255,255,255,.04) 25%, #000 25% 27.5%, rgba(255,255,255,.14) 27.5% 30%, rgba(255,255,255,.04) 33%, rgba(255,255,255,.03) 92%, rgba(255,255,255,.1)), #0c0c0e; }
-  .back { left: 0; width: 100%; transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
 
   /* ---------- Vorderseite: klarer Deckel über schwarzem Träger ---------- */
-  .lid { position: absolute; inset: 0; overflow: hidden; border-radius: calc(var(--s) * .014); background: #0b0b0c; }
+  .lid { position: absolute; inset: 0; overflow: hidden; border-radius: 1px; background: #0b0b0c; }
   .tray { position: absolute; inset: 0; background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
-  /* geriffelter schwarzer Rand am Scharnier (wie beim klassischen Jewel Case) */
+  /* geriffelter schwarzer Rand am Scharnier: matt, spiegelt nicht, keine Kratzer */
   .ribs { position: absolute; left: 0; top: 0; bottom: 0; width: 8%;
-    background:
-      repeating-linear-gradient(90deg, rgba(255,255,255,.11) 0 1px, rgba(255,255,255,0) 1px 3px),
-      linear-gradient(90deg, rgba(48,48,52,.98), rgba(20,20,22,.98) 70%, rgba(30,30,33,.98));
-    box-shadow: inset -1px 0 0 rgba(255,255,255,.2), inset 1px 0 0 rgba(255,255,255,.08), 1px 0 0 rgba(0,0,0,.6); }
-  /* Scharnier-Zapfen oben und unten */
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, rgba(0,0,0,.12) 1px 2px, rgba(0,0,0,0) 2px 3px),
+      linear-gradient(90deg, #232326, #1b1b1d 60%, #1f1f22);
+    box-shadow: inset -1px 0 0 rgba(0,0,0,.65); }
   .pin { position: absolute; left: 1.6%; width: 4.6%; height: 9%; border-radius: 2px;
-    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.22) 45%, rgba(255,255,255,.04)), #1d1d20;
-    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.28), 0 0 2px rgba(0,0,0,.7); }
+    background: linear-gradient(90deg, #1b1b1e, #28282b 45%, #1a1a1c); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.07), 0 0 2px rgba(0,0,0,.75); }
   .pin.a { top: 4.5%; } .pin.b { bottom: 4.5%; }
   /* Booklet: Papier, nie ganz gerade eingelegt und nie ganz flach */
   .booklet { position: absolute; top: 2.3%; bottom: 2.3%; right: 2.6%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat;
@@ -77,76 +85,91 @@
     background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.17)); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.34), 0 0 1.5px rgba(0,0,0,.6); }
   .tab.r1 { right: 1.2%; top: 10%; } .tab.r2 { right: 1.2%; bottom: 10%; }
   .tab.l1 { left: 9.2%; top: 10%; } .tab.l2 { left: 9.2%; bottom: 10%; }
-  /* Deckel-Wände oben und unten */
+
+  /* Glanzschicht des klaren Plastiks – nur über dem klaren Teil, nicht über dem matten Rand */
+  .gloss { position: absolute; top: 0; bottom: 0; left: 8%; right: 0; overflow: hidden; pointer-events: none; }
+  .gloss.bk { left: 0; right: 6%; }
   .lip { position: absolute; left: 0; right: 0; height: 1.3%; }
   .lip.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)); box-shadow: 0 .5px 0 rgba(255,255,255,.18); }
   .lip.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); box-shadow: 0 -.5px 0 rgba(255,255,255,.14); }
-
-  /* Licht: gerader Glanzstreifen + gebogener Reflex (Deckel ist nie ganz plan) – beide wandern beim Blättern */
-  .sheen { position: absolute; inset: 0; pointer-events: none;
+  .sheen { position: absolute; inset: 0;
     background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.15) 43%, rgba(255,255,255,.055) 49%, rgba(255,255,255,0) 57%);
     background-size: 320% 100%; background-position: var(--sx, 50%) 0; }
-  .uneven { position: absolute; inset: 0; pointer-events: none;
+  .uneven { position: absolute; inset: 0;
     background: radial-gradient(150% 70% at var(--ux, 50%) 118%, rgba(255,255,255,0) 60%, rgba(255,255,255,.075) 65%, rgba(255,255,255,0) 71%); }
-  /* Mikrokratzer und Abrieb: vor allem dort sichtbar, wo gerade Licht hinfällt */
-  .scratch { position: absolute; inset: 0; pointer-events: none; background-size: 340px 340px; background-position: var(--tx, 0) var(--ty, 0);
-    opacity: var(--sk, .9);
+  .scratch { position: absolute; inset: 0; background-size: 340px 340px; background-position: var(--tx, 0) var(--ty, 0); opacity: var(--sk, .9);
     -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%);
     mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%); }
-  .wear { position: absolute; inset: 0; pointer-events: none; background-size: 100% 100%; opacity: var(--sk, .9);
+  .wear { position: absolute; inset: 0; background-size: 100% 100%; opacity: var(--sk, .9);
     -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%);
     mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%); }
-  .crack { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: min(1, calc(var(--sk, .9) + .3)); }
+  .crack { position: absolute; inset: 0; width: 100%; height: 100%; opacity: min(1, calc(var(--sk, .9) + .3)); }
   .crack path { fill: none; stroke: rgba(255,255,255,.55); stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
-  .spot { position: absolute; inset: 0; pointer-events: none;
+  .spot { position: absolute; inset: 0;
     background: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), rgba(255,255,255,.2), rgba(255,255,255,.05) 22%, rgba(255,255,255,0) 42%); }
-  /* dicke Plastikkante des Deckels */
-  .rim { position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.24), inset 0 0 0 2px rgba(0,0,0,.35), inset 0 0 0 3px rgba(255,255,255,.05), inset 0 1px 0 1px rgba(255,255,255,.16); }
+  .rim { position: absolute; inset: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.22), inset 0 0 0 2px rgba(0,0,0,.3), inset 0 1px 0 1px rgba(255,255,255,.14); }
 
   /* ---------- Seiten: Deckelkante, Schlitz, klarer Boden mit dem Rücken des Einlegers ---------- */
-  .side { overflow: hidden; border-radius: 1.5px; background: #0d0d0e; }
-  .side .inlay { position: absolute; top: 1.5%; bottom: 1.5%; display: flex; align-items: center; justify-content: center; overflow: hidden;
-    background: linear-gradient(rgba(0,0,0,.4), rgba(0,0,0,.4)), var(--img) 50% 50% / 1400% auto no-repeat, #2c2c2e; }
-  .side-l .inlay { left: 7%; right: 31%; }
-  .side-r .inlay { left: 31%; right: 7%; }
+  .side { overflow: hidden; background: #0d0d0e; }
+  /* Rücken = linker (bzw. rechter) Streifen vom Cover, über die ganze Höhe */
+  .side .inlay { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background: var(--img) 0 50% / auto 100% no-repeat, #2c2c2e; }
+  .side-l .inlay { left: 3%; right: 28%; }
+  .side-r .inlay { left: 28%; right: 3%; background-position: 100% 50%; }
   .spine { writing-mode: vertical-rl; transform: rotate(180deg); font-size: calc(var(--t) * .34); font-weight: 700; letter-spacing: .08em;
-    color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
+    color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 0 5px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
   .spine.r { transform: none; }
   .side .lidedge { position: absolute; top: 0; bottom: 0; width: 26%; }
-  .side-l .lidedge { right: 0; background: linear-gradient(270deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12)), #141416; }
+  /* Scharnier-Seite: matt schwarz wie der geriffelte Rand */
+  .side-l .lidedge { right: 0; background: repeating-linear-gradient(270deg, rgba(255,255,255,.04) 0 1px, rgba(0,0,0,0) 1px 3px), linear-gradient(270deg, #222225, #1a1a1c 60%, #1f1f21); }
+  /* Öffnungs-Seite: klare Deckelkante */
   .side-r .lidedge { left: 0; background: linear-gradient(90deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12)), #141416; }
   /* Schlitz zwischen Deckel und Boden – hier öffnet man die Hülle */
   .side .seam { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #000; }
-  .side-l .seam { right: 26%; box-shadow: -1px 0 0 rgba(255,255,255,.34), 1px 0 0 rgba(255,255,255,.22); }
+  .side-l .seam { right: 26%; box-shadow: -1px 0 0 rgba(255,255,255,.3), 1px 0 0 rgba(0,0,0,.4); }
   .side-r .seam { left: 26%; box-shadow: 1px 0 0 rgba(255,255,255,.38), -1px 0 0 rgba(255,255,255,.24); }
-  /* Scharnier-Zapfen von der Seite */
   .side-l .knuckle { position: absolute; right: 0; width: 44%; height: 9%; border-radius: 2px;
-    background: linear-gradient(270deg, rgba(255,255,255,.1), rgba(255,255,255,.32) 35%, rgba(255,255,255,.08) 75%, rgba(255,255,255,.18)), #1a1a1c;
-    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3), 0 0 2px rgba(0,0,0,.8); }
+    background: linear-gradient(270deg, #1b1b1e, #29292c 40%, #1a1a1c); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.08), 0 0 2px rgba(0,0,0,.8); }
   .side-l .knuckle.a { top: 4.5%; } .side-l .knuckle.b { bottom: 4.5%; }
   /* klare Plastikwand: helle Brechungskanten, Licht wandert mit */
-  .side .wall { position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,0) 7%, rgba(255,255,255,0) 93%, rgba(255,255,255,.14)),
-      linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0) 4%, rgba(255,255,255,0) 96%, rgba(255,255,255,.1)),
+  .side .wall { position: absolute; top: 0; bottom: 0; left: 0; right: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(255,255,255,.16), rgba(255,255,255,0) 7%, rgba(255,255,255,0) 93%, rgba(255,255,255,.12)),
+      linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,0) 4%, rgba(255,255,255,0) 96%, rgba(255,255,255,.08)),
       linear-gradient(180deg, rgba(255,255,255,0) 15%, rgba(255,255,255,var(--sl, .06)) 50%, rgba(255,255,255,0) 85%);
-    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.22); }
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.18); }
+  .side-l .wall { right: 26%; }
 
-  /* Rückseite beim Umdrehen: so wie jetzt in der App (Glas-Karte mit Titelliste) */
-  .back { display: flex; flex-direction: column; border-radius: 14px; overflow: hidden;
-    background: linear-gradient(180deg, rgba(62,62,68,.94), rgba(28,28,30,.97));
-    box-shadow: inset 0 1px .5px rgba(255,255,255,.35), inset 0 0 0 .5px rgba(255,255,255,.12); }
-  .back .head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 8px 12px; border-bottom: .5px solid rgba(84,84,88,.6); }
-  .back .head div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .back .head b { font-size: 14px; } .back .head span { font-size: 12px; color: rgba(235,235,245,.6); }
-  .back .play { width: 34px; height: 34px; border-radius: 50%; background: #fff; color: #000; display: flex; align-items: center; justify-content: center; }
-  .back ol { margin: 0; padding: 4px 10px 8px 30px; overflow: auto; font-size: 12px; line-height: 2; color: rgba(255,255,255,.92); }
+  /* ---------- Rückseite: Einleger mit Titelliste hinter dem klaren Boden ---------- */
+  .back { overflow: hidden; border-radius: 1px; background: #0b0b0c; }
+  .bk-inlay { position: absolute; left: 1.8%; right: 6.5%; top: 2.6%; bottom: 2.6%; overflow: hidden; display: flex; flex-direction: column;
+    padding: 5.5% 6% 4%; color: #fff; letter-spacing: 0;
+    background: linear-gradient(180deg, rgba(8,8,10,.6), rgba(8,8,10,.8)), var(--img) 35% 45% / 280% auto no-repeat, #1c1c1e;
+    box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7); }
+  .bk-head { display: flex; align-items: center; gap: 4%; }
+  .bk-head div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bk-head small { font-size: calc(var(--s) * .032); font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+  .bk-head b { font-size: calc(var(--s) * .062); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bk-head .play { flex: none; width: calc(var(--s) * .11); height: calc(var(--s) * .11); border-radius: 50%; background: #fff; color: #000;
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+  .bk-head .play svg { width: 44%; height: 44%; margin-left: 8%; }
+  .bk-inlay ol { flex: 1; min-height: 0; margin: calc(var(--s) * .035) 0 0; padding: 0; list-style: none; overflow: hidden;
+    --lh: calc(var(--s) * .56 / var(--rows)); font-size: min(calc(var(--s) * .043), calc(var(--lh) * .72)); line-height: var(--lh); color: rgba(255,255,255,.92); }
+  .bk-inlay ol.two { columns: 2; column-gap: calc(var(--s) * .04); }
+  .bk-inlay li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; break-inside: avoid; }
+  .bk-inlay li b { display: inline-block; min-width: 1.7em; font-weight: 600; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
+  .bk-foot { display: flex; align-items: flex-end; justify-content: space-between; font-size: calc(var(--s) * .026); color: rgba(255,255,255,.5); }
+  .barcode { display: block; width: calc(var(--s) * .17); height: calc(var(--s) * .075); border: calc(var(--s) * .008) solid #fff;
+    background: repeating-linear-gradient(90deg, #111 0 1px, #fff 1px 2px, #111 2px 4px, #fff 4px 5px, #111 5px 6px, #fff 6px 8px, #111 8px 9px, #fff 9px 11px); }
+  .bk-hinge { position: absolute; right: 0; top: 0; bottom: 0; width: 6%; background: linear-gradient(270deg, #1d1d20, #19191b 60%, #202023); box-shadow: inset 1px 0 0 rgba(0,0,0,.6); }
+  .bk-hinge .pin { left: 20%; width: 60%; }
 
-  /* Spiegelung auf dem Boden (deckend wie beim iPod) */
-  .refl { position: absolute; left: var(--b); width: calc(100% - 2 * var(--b)); top: calc(100% + 2px); height: 46%; overflow: hidden; transform: translateZ(calc(var(--t) / 2)); }
-  .refl > .inner { position: absolute; left: 0; right: 0; top: 0; height: 217.4%; transform: scaleY(-1); }
-  .refl::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,.58), rgba(0,0,0,.9) 50%, #000 85%); }
-  .item.flipped .refl, .stage.inspect .refl { opacity: 0; }
+  /* ---------- Spiegelung auf dem Boden: die ganze Hülle (mit Rücken) gespiegelt ---------- */
+  .mirror { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-style: preserve-3d; pointer-events: none;
+    transform-origin: 50% 100%; transform: translateY(3px) scaleY(-1); }
+  .mirror .face::after, .mirror .core::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.56), rgba(0,0,0,.88) 22%, #000 40%); }
+  .stage.inspect .mirror { display: none; }
 </style>
 </head>
 <body>
@@ -176,6 +199,7 @@ const ALBUMS = [
 ];
 const TRACKS = ['Burnout', 'Having a Blast', 'Chump', 'Longview', 'Welcome to Paradise', 'Pulling Teeth', 'Basket Case', 'She', 'Sassafras Roots', 'When I Come Around', 'Coming Clean', 'Emenius Sleepus', 'In the End', 'F.O.D.'];
 const cover = (a, px) => `https://coverartarchive.org/release-group/${a[2]}/front-${px}`;
+const PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13 -8z" fill="currentColor"/></svg>';
 
 // Zufall mit festem Startwert: jede Hülle hat immer dieselben kleinen Macken
 function rng(seed) {
@@ -265,44 +289,59 @@ const TEX = scratchTexture();
 const WEAR = [11, 23, 37].map(wearTexture);
 // feiner Haarriss am Scharnier (klassischer Jewel-Case-Schaden) – nur bei manchen Hüllen
 const CRACK = `<svg class="crack" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-  <path d="M8.2 1.2 L9.6 4.6 L9.2 6.4 L11.4 10.8 L11 12.6"/><path d="M9.6 4.6 L12.4 5.6"/></svg>`;
+  <path d="M0.2 1.2 L1.74 4.6 L1.3 6.4 L3.7 10.8 L3.26 12.6"/><path d="M1.74 4.6 L4.78 5.6"/></svg>`;
+
+// Glanzschicht: Licht, Kratzer, Abrieb
+function gloss(seed, cls, crack) {
+  return `<div class="gloss ${cls}">
+    <div class="lip t"></div><div class="lip b"></div><div class="sheen"></div><div class="uneven"></div>
+    <div class="scratch" style="background-image:url(${TEX});--tx:${(seed * 137) % 340}px;--ty:${(seed * 211) % 340}px"></div>
+    <div class="wear" style="background-image:url(${WEAR[seed % 3]})"></div>
+    ${crack ? CRACK : ''}<div class="spot"></div><div class="rim"></div>
+  </div>`;
+}
 
 // Vorderseite. full=false: vereinfacht für die Spiegelung
-function lid(a, i, full) {
+function frontHtml(a, i, full) {
   const r = rng(i * 7 + 3);
   const rot = ((r() - 0.5) * 0.7).toFixed(2), ox = ((r() - 0.5) * 1.2).toFixed(2), oy = ((r() - 0.5) * 1.2).toFixed(2);
-  return `<div class="lid">
+  return `<div class="face front"><div class="lid">
     <div class="tray"></div><div class="ribs"></div><div class="pin a"></div><div class="pin b"></div>
     <div class="booklet" style="background-image:url('${cover(a, 500)}');--rot:${rot}deg;--ox:${ox}px;--oy:${oy}px"></div>
     <div class="tab r1"></div><div class="tab r2"></div><div class="tab l1"></div><div class="tab l2"></div>
-    <div class="lip t"></div><div class="lip b"></div>
-    <div class="sheen"></div><div class="uneven"></div>
-    ${full ? `<div class="scratch" style="background-image:url(${TEX});--tx:${(i * 137) % 340}px;--ty:${(i * 211) % 340}px"></div>
-      <div class="wear" style="background-image:url(${WEAR[i % 3]})"></div>
-      ${i % 4 === 2 ? CRACK : ''}<div class="spot"></div>` : ''}
-    <div class="rim"></div>
+    ${full ? gloss(i, '', i % 4 === 2) : ''}
+  </div></div>`;
+}
+function sideHtml(a, which, full) {
+  return `<div class="face side side-${which}">
+    <div class="inlay"><span class="spine${which === 'r' ? ' r' : ''}">Green Day · ${a[0]}</span></div>
+    <div class="lidedge"></div><div class="seam"></div>
+    ${which === 'l' ? '<div class="knuckle a"></div><div class="knuckle b"></div>' : ''}
+    ${full ? '<div class="wall"></div>' : ''}
   </div>`;
 }
+function backHtml(a, i, full) {
+  const n = TRACKS.length, cols = n > 9 ? 2 : 1, rows = Math.ceil(n / cols);
+  return `<div class="face back">
+    <div class="bk-inlay">${full ? `
+      <div class="bk-head"><div><small>Green Day</small><b>${a[0]}</b></div><span class="play">${PLAY}</span></div>
+      <ol class="${cols === 2 ? 'two' : ''}" style="--rows:${rows}">${TRACKS.map((t, k) => `<li><b>${k + 1}</b>${t}</li>`).join('')}</ol>
+      <div class="bk-foot"><span>℗ ${a[1]} Green Day</span><i class="barcode"></i></div>` : ''}
+    </div>
+    <div class="bk-hinge"><i class="pin a"></i><i class="pin b"></i></div>
+    ${full ? gloss(i + 5, 'bk', false) : ''}
+  </div>`;
+}
+const BEVELS = '<div class="face bev fl"></div><div class="face bev fr"></div><div class="face bev bl"></div><div class="face bev br"></div>';
 
 const stage = document.getElementById('stage');
 stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
   <div class="jc" style="--img:url('${cover(a, 250)}')">
-    <div class="face front">${lid(a, i, true)}</div>
-    <div class="face bev-l"></div><div class="face bev-r"></div>
-    <div class="face side side-l">
-      <div class="inlay"><span class="spine">Green Day · ${a[0]}</span></div>
-      <div class="lidedge"></div><div class="seam"></div><div class="knuckle a"></div><div class="knuckle b"></div><div class="wall"></div>
-    </div>
-    <div class="face side side-r">
-      <div class="inlay"><span class="spine r">Green Day · ${a[0]}</span></div>
-      <div class="lidedge"></div><div class="seam"></div><div class="wall"></div>
-    </div>
+    <div class="core"></div>
+    ${frontHtml(a, i, true)}${BEVELS}${sideHtml(a, 'l', true)}${sideHtml(a, 'r', true)}
     <div class="face top-f"></div><div class="face bot-f"></div>
-    <div class="face back">
-      <div class="head"><div><b>${a[0]}</b><span>Green Day</span></div><span class="play"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M7 4v16l13 -8z" fill="currentColor"/></svg></span></div>
-      <ol>${TRACKS.map((t) => `<li>${t}</li>`).join('')}</ol>
-    </div>
-    <div class="refl"><div class="inner">${lid(a, i, false)}</div></div>
+    ${backHtml(a, i, true)}
+    <div class="mirror"><div class="core"></div>${frontHtml(a, i, false)}${BEVELS}${sideHtml(a, 'l', false)}${sideHtml(a, 'r', false)}${backHtml(a, i, false)}</div>
   </div>
 </div>`).join('');
 const els = [...stage.querySelectorAll('.item')];
@@ -322,7 +361,6 @@ function light(el, k, tilt) {
   el.style.setProperty('--sx', `${(50 + k * 55).toFixed(1)}%`);
   el.style.setProperty('--ux', `${(50 + k * 95).toFixed(1)}%`);
   el.style.setProperty('--bvr', (0.12 + 0.42 * Math.max(0, Math.min(1, k))).toFixed(3));
-  el.style.setProperty('--bvl', (0.12 + 0.42 * Math.max(0, Math.min(1, -k))).toFixed(3));
   el.style.setProperty('--sl', (0.03 + 0.12 * Math.min(1, ak)).toFixed(3));
 }
 

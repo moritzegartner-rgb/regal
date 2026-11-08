@@ -1,5 +1,5 @@
 // Service Worker: App funktioniert auch ohne Netz, Cover werden zwischengespeichert
-const VERSION = 'regal-v10';
+const VERSION = 'regal-v11';
 const COVERS = 'regal-covers';
 const SHELL = [
   './',

@@ -7,7 +7,7 @@ import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -351,8 +351,10 @@ function renderFlow(level, key = '') {
         </div>
       </div>`).join('')}
     </div>
-    <div class="cf-info"><div class="cf-title"></div><div class="cf-sub"></div></div>
-    ${entries.length > 1 ? `<input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${entries.length - 1}" step="1" value="0" aria-label="Schnell blättern">` : ''}
+    <div class="cf-info">
+      <div class="cf-title">${EQ}<span class="cf-title-text"></span></div>
+      <div class="cf-sub"></div>
+    </div>
     ${spConnected ? npHtml() : ''}`;
   if (spConnected) npTick();
   CF.els = [...document.querySelectorAll('.cf-item')];
@@ -406,11 +408,10 @@ function cfLayout() {
   if (cur !== CF.shown) {
     CF.shown = cur;
     const e = CF.entries[cur];
-    $('.cf-title').textContent = e.title;
+    $('.cf-title-text').textContent = e.title;
     $('.cf-sub').textContent = e.sub;
-    const scrub = $('#cf-scrub');
-    if (scrub && document.activeElement !== scrub) scrub.value = cur;
     if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
+    npUpdateView();
   }
   return true;
 }
@@ -488,7 +489,14 @@ async function cfFlip(i) {
   if (!mbid) return;
   try {
     const det = await loadAlbumDetails(mbid);
-    if (CF.flipped === i) back.innerHTML = cfBackHtml(i, det);
+    if (CF.flipped === i) {
+      back.innerHTML = cfBackHtml(i, det);
+      npUpdateView();
+      // laufenden Titel in die Mitte der Liste holen
+      const list = back.querySelector('.cf-back-list');
+      const li = list?.querySelector('li.playing');
+      if (li) list.scrollTop = Math.max(0, li.offsetTop - list.clientHeight / 2 + li.clientHeight / 2);
+    }
   } catch (err) {
     if (CF.flipped === i) back.innerHTML = cfBackHtml(i, null, err.message);
   }
@@ -537,14 +545,6 @@ function cfBind() {
   };
   stage.addEventListener('pointerup', end);
   stage.addEventListener('pointercancel', end);
-  const scrub = $('#cf-scrub');
-  scrub?.addEventListener('input', () => {
-    // schnelles Schieben: erst Bilder laden, wenn der Finger kurz ruht
-    CF.fast = true;
-    clearTimeout(CF.fastTimer);
-    CF.fastTimer = setTimeout(() => { CF.fast = false; cfLayout(); }, 180);
-    cfGo(Number(scrub.value));
-  });
 }
 
 window.addEventListener('resize', () => { if ($('#cf-stage')) cfLayout(); });
@@ -774,46 +774,113 @@ function tracksHtml(det, sp) {
   return discs.map((d) => `
     ${multi ? `<h4 class="disc-title">CD ${d.n}${d.title ? ` – ${esc(d.title)}` : ''}</h4>` : ''}
     <ol class="tracks">${d.tracks.map((t) => `<li data-action="sp-track" ${spData(sp)} data-track="${esc(t.title)}" data-pos="${pos++}">
-      <span class="tn">${esc(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
+      <span class="tn"><b>${esc(t.n)}</b>${EQ}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
     + `<p class="tracks-foot">${all.length} Titel${total ? `, ${Math.round(total / 60000)} Minuten` : ''}</p>`;
 }
 
 // Abspielen: mit Spotify-Verbindung im Hintergrund (Spotify Connect), sonst die Spotify-App öffnen
 let spConnected = false;
 
-// ---------- Mini-Player im Blätter-Bildschirm: was läuft gerade, Play/Pause, vor, zurück ----------
+// ---------- Mini-Player im Blätter-Bildschirm: Play/Pause, vor, zurück ----------
+// „Läuft gerade“ steht nur da, wenn du bei einem anderen Album/Interpreten bist.
+// Ist das Album in der Mitte das laufende, zeigen kleine Equalizer-Balken das dezent an.
 let npTimer = 0;
 let npPlaying = false;
+let npNow = null; // { albumId, album, artists, artistIds, track, img }
+
+// Drei kleine Balken wie bei Apple Music (bewegen sich nur, während Musik läuft)
+const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
 
 function npHtml() {
-  return `<div class="np glass" id="np">
-    <div class="np-art"><img alt="" hidden></div>
-    <div class="np-text"><span class="np-title">Spotify</span><span class="np-sub">Album antippen und abspielen</span></div>
-    <button class="np-btn" data-action="np-prev" aria-label="Vorheriger Titel">${icon('prev', 22)}</button>
-    <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 22)}</button>
-    <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 22)}</button>
+  return `<div class="np" id="np">
+    <button class="np-now glass" data-action="np-goto" hidden>
+      <img alt="" hidden><span class="np-now-text"></span>${EQ}
+    </button>
+    <div class="np-controls">
+      <button class="np-btn" data-action="np-prev" aria-label="Vorheriger Titel">${icon('prev', 30)}</button>
+      <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 32)}</button>
+      <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 30)}</button>
+    </div>
   </div>`;
 }
 
-function npShow(st, err) {
-  const box = $('#np');
-  if (!box) return;
+function npShow(st) {
   const t = st?.item;
-  box.querySelector('.np-title').textContent = t ? t.name : (err ? 'Spotify' : 'Gerade läuft nichts');
-  box.querySelector('.np-sub').textContent = t
-    ? [(t.artists || []).map((a) => a.name).join(', '), st.device?.name].filter(Boolean).join(' · ')
-    : (err || 'Album antippen und abspielen');
-  const img = box.querySelector('.np-art img');
-  const pics = (t?.album?.images || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
-  const pic = pics.find((p) => (p.width || 0) >= 64) || pics[0];
-  if (pic) { if (img.getAttribute('src') !== pic.url) img.src = pic.url; img.hidden = false; } else img.hidden = true;
+  npNow = t ? {
+    albumId: t.album?.id || '',
+    album: t.album?.name || '',
+    artists: (t.artists || []).map((a) => a.name),
+    artistIds: (t.artists || []).map((a) => a.id),
+    track: t.name || '',
+    img: ((t.album?.images || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0)).find((p) => (p.width || 0) >= 64) || {}).url || '',
+  } : null;
   npSetPlaying(!!st?.is_playing);
+  npUpdateView();
 }
 
 function npSetPlaying(playing) {
   npPlaying = playing;
   const b = $('#np [data-action="np-toggle"]');
-  if (b) b.innerHTML = icon(playing ? 'pause' : 'play', 22);
+  if (b) b.innerHTML = icon(playing ? 'pause' : 'play', 32);
+  document.body.classList.toggle('np-paused', !playing);
+}
+
+// Spielt gerade dieses Album / dieser Interpret?
+const normTrack = (s) => norm(String(s || '').replace(/\s+-\s+.*(remaster|version|live|edit|mix|mono|stereo|demo).*$/i, ''));
+
+function isPlayingArtist(g) {
+  if (!npNow || !g) return false;
+  const id = artMem.get(g.key)?.id;
+  return (id && npNow.artistIds.includes(id)) || npNow.artists.some((a) => norm(a) === norm(g.name));
+}
+
+function isPlayingAlbum(title, artist, spotifyId = '') {
+  if (!npNow) return false;
+  if (spotifyId && spotifyId === npNow.albumId) return true;
+  return norm(title) === norm(npNow.album) && npNow.artists.some((a) => norm(a) === norm(artist));
+}
+
+function entryIsPlaying(e) {
+  if (!e) return false;
+  if (CF.level === 'artists') return isPlayingArtist(e.group);
+  const mbid = e.missing ? e.album.mbid : e.item?.mbid;
+  return isPlayingAlbum(e.title, state.current?.g?.name, mbid && albumMem.get(mbid)?.spotify);
+}
+
+// Anzeige auffrischen: Balken neben dem Titel, „Läuft gerade“-Hinweis, laufender Titel in Listen
+function npUpdateView() {
+  const here = npNow && $('#cf-stage') && entryIsPlaying(CF.entries[CF.shown]);
+  document.querySelector('.cf-title')?.classList.toggle('playing', !!here);
+  const pill = $('#np .np-now');
+  if (pill) {
+    pill.hidden = !npNow || !!here;
+    if (npNow) {
+      pill.querySelector('.np-now-text').textContent = `${npNow.track} · ${npNow.artists[0] || ''}`;
+      const img = pill.querySelector('img');
+      if (npNow.img) { if (img.getAttribute('src') !== npNow.img) img.src = npNow.img; img.hidden = false; } else img.hidden = true;
+    }
+  }
+  // Titellisten (umgedrehtes Album, Album-Blatt): laufenden Titel markieren
+  document.querySelectorAll('.tracks li[data-track]').forEach((li) => {
+    const on = !!npNow && isPlayingAlbum(li.dataset.title, li.dataset.artist, li.dataset.sid)
+      && normTrack(li.dataset.track) === normTrack(npNow.track);
+    li.classList.toggle('playing', on);
+  });
+}
+
+// „Läuft gerade“ antippen: zum laufenden Album springen
+function npGoto() {
+  if (!npNow) return;
+  const g = libraryGroups().find((x) => isPlayingArtist(x));
+  if (!g) { toast('Dieses Album ist nicht in deiner Sammlung.'); return; }
+  if (CF.level === 'albums' && CF.key === g.key) {
+    const i = CF.entries.findIndex((e) => entryIsPlaying(e));
+    if (i >= 0) cfGo(i);
+    return;
+  }
+  const target = albumEntries(g).find((e) => isPlayingAlbum(e.title, g.name, albumMem.get(e.missing ? e.album.mbid : e.item?.mbid)?.spotify));
+  if (target) CF.mem[`albums:${g.key}`] = target.key;
+  location.hash = `#/flow/${enc(g.key)}`;
 }
 
 // Alle 5 Sekunden nachsehen, solange der Blätter-Bildschirm sichtbar ist
@@ -821,7 +888,7 @@ async function npTick() {
   clearTimeout(npTimer);
   if (!spConnected || !$('#np')) return;
   if (document.visibilityState === 'visible') {
-    try { npShow(await spotify.playerState()); } catch (e) { npShow(null, e.message); }
+    try { npShow(await spotify.playerState()); } catch { npShow(null); }
   }
   npTimer = setTimeout(npTick, 5000);
 }
@@ -903,6 +970,7 @@ async function fillAlbumSection(root, a) {
     if (!root.isConnected) return;
     showLinks(det?.spotify);
     box.innerHTML = tracksHtml(det, { artist: a.artist, title: a.title, sid: det?.spotify || '' });
+    npUpdateView();
   } catch (e) {
     if (root.isConnected) box.innerHTML = `<p class="hint error">${esc(e.message)}</p>`;
   }
@@ -1796,6 +1864,7 @@ const actions = {
   'np-toggle': () => npCommand(() => (npPlaying ? spotify.pause() : spotify.resume()), !npPlaying),
   'np-next': () => npCommand(() => spotify.next()),
   'np-prev': () => npCommand(() => spotify.previous()),
+  'np-goto': () => npGoto(),
 
   // Spotify
   'sp-play': (el) => spotifyPlay({ artist: el.dataset.artist, title: el.dataset.title, sid: el.dataset.sid }),

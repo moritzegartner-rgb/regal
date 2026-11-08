@@ -680,8 +680,32 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 .cf-cover {
   width: 100%; height: 100%; aspect-ratio: auto; border-radius: 3px;
   box-shadow: none;
-  /* Spiegelung auf dem „Glasboden“, wie bei Cover Flow auf dem iPod */
-  -webkit-box-reflect: below 2px linear-gradient(transparent 62%, rgba(255, 255, 255, 0.26));
+}
+/* Spiegelung auf dem „Glasboden“ wie bei Cover Flow auf dem iPod:
+   ein gespiegeltes Bild mit deckendem Schwarz-Verlauf – Spiegelungen weiter vorne
+   verdecken die dahinter, statt durchzuscheinen */
+.cf-reflect {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); height: 48%;
+  overflow: hidden; background: #000; pointer-events: none;
+}
+.cf-reflect-inner { position: absolute; left: 0; right: 0; top: 0; height: 208.34%; transform: scaleY(-1); }
+.cf-reflect .cf-cover::after { display: none; }
+.cf-reflect::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.9) 50%, #000 85%);
+}
+/* Interpreten-Karte: Logo bzw. Name als Schriftzug auf dunklem Grund */
+.artist-card {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, #2c2c2e 0%, #141416 60%, #0b0b0c 100%);
+}
+.artist-card .artist-logo { position: static; width: 82%; height: 82%; object-fit: contain; }
+.artist-card.thumb .artist-logo { width: 88%; height: 88%; }
+.artist-card.text { padding: 10%; }
+.artist-name {
+  font: 700 calc(var(--cf, 240px) * 0.12) / 1.05 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: -0.02em; color: #fff; text-align: center; word-break: break-word;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .cf-cover img { -webkit-user-drag: none; pointer-events: none; }
 .cf-cover .ph { font-size: 15px; padding: 12px; }
@@ -759,7 +783,9 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 body.flow-page #view { padding-bottom: calc(var(--safe-bottom) + 12px); }
 body.flow-page { overscroll-behavior: none; }
 .flow-empty { padding-top: 18vh; }
-.cf-item.missing .cf-cover { filter: grayscale(1) brightness(0.75); opacity: 0.55; }
+/* fehlende Alben: grau und dunkel, aber deckend (sonst scheinen Spiegelungen durch) */
+.cf-item.missing .cf-front { filter: grayscale(1) brightness(0.5); }
+body.flow-page::before { display: none; } /* reines Schwarz wie beim iPod */
 .cf-info { margin-top: 0; }
 .cf-title { font-size: 20px; font-weight: 600; letter-spacing: -0.45px; }
 .cf-round {

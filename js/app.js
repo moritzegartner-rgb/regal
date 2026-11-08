@@ -4,9 +4,10 @@
 import { db, getSetting, setSetting, getCache, setCache } from './db.js';
 import * as mb from './musicbrainz.js';
 import * as gemini from './gemini.js';
+import * as art from './artistart.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -262,7 +263,41 @@ const CF = {
 const CF_WINDOW = 6; // so viele Cover links und rechts werden gezeichnet
 
 function artistEntries() {
-  return libraryGroups().map((g) => ({ key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), group: g }));
+  return libraryGroups().map((g) => ({
+    key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), logo: artMem.get(g.key)?.logo || '', group: g,
+  }));
+}
+
+// Vorderseite eines Covers. Interpreten: Logo (Schriftzug) auf dunkler Karte, sonst der Name als Schriftzug.
+function cfFaceHtml(e) {
+  if (CF.level === 'artists') {
+    return e.logo
+      ? `<div class="cover cf-cover artist-card"><img class="artist-logo" data-src="${esc(art.small(e.logo))}" alt="" draggable="false"></div>`
+      : `<div class="cover cf-cover artist-card text"><span class="artist-name">${esc(e.title)}</span></div>`;
+  }
+  return `<div class="cover cf-cover" style="--h:${hue(e.title)}">
+    <span class="ph">${esc(e.title)}</span>${e.cover ? `<img data-src="${esc(e.cover)}" alt="" draggable="false">` : ''}
+  </div>`;
+}
+
+// Cover + Spiegelung darunter. Die Spiegelung ist deckend (schwarz verlaufend) wie beim iPod,
+// darum überdecken sich die Spiegelungen benachbarter Cover sauber statt durchzuscheinen.
+function cfFrontHtml(e) {
+  const face = cfFaceHtml(e);
+  return `${face}<div class="cf-reflect" aria-hidden="true"><div class="cf-reflect-inner">${face}</div></div>`;
+}
+
+// Logo nachträglich eingetroffen: nur dieses Cover austauschen (kein Springen)
+function cfRefreshArtist(key) {
+  if (CF.level !== 'artists' || !$('#cf-stage')) return;
+  const i = CF.entries.findIndex((e) => e.key === key);
+  if (i < 0) return;
+  const logo = artMem.get(key)?.logo || '';
+  if (logo === CF.entries[i].logo) return;
+  CF.entries[i].logo = logo;
+  const front = CF.els[i]?.querySelector('.cf-front');
+  if (front) front.innerHTML = cfFrontHtml(CF.entries[i]);
+  cfLayout();
 }
 
 function albumEntries(g) {
@@ -309,9 +344,7 @@ function renderFlow(level, key = '') {
     <div class="cf-stage" id="cf-stage">
       ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
         <div class="cf-card">
-          <div class="cf-front"><div class="cover cf-cover" style="--h:${hue(e.title)}">
-            <span class="ph">${esc(e.title)}</span>${e.cover ? `<img data-src="${esc(e.cover)}" alt="" draggable="false">` : ''}
-          </div></div>
+          <div class="cf-front">${cfFrontHtml(e)}</div>
           ${level === 'albums' ? '<div class="cf-back"></div>' : ''}
         </div>
       </div>`).join('')}
@@ -339,26 +372,31 @@ function renderFlow(level, key = '') {
 function cfLayout() {
   const stage = $('#cf-stage');
   if (!stage) return false;
-  CF.size = Math.round(Math.min(stage.clientWidth * 0.62, stage.clientHeight * 0.62, 340));
+  CF.size = Math.round(Math.min(stage.clientWidth * 0.56, stage.clientHeight * 0.58, 320));
   stage.style.setProperty('--cf', `${CF.size}px`);
   const s = CF.size;
   CF.els.forEach((el, i) => {
     const d = i - CF.pos;
     const ad = Math.abs(d);
-    const img = el.firstElementChild.querySelector('img');
+    const imgs = el.querySelectorAll('.cf-front img');
     if (ad > CF_WINDOW + 0.5) {
       if (el.style.display !== 'none') el.style.display = 'none';
-      // weit weg: Bild aus dem Speicher werfen (sonst stürzt Safari bei großen Sammlungen ab)
-      if (img && ad > CF_WINDOW * 2 && img.hasAttribute('src')) img.removeAttribute('src');
+      // weit weg: Bilder aus dem Speicher werfen (sonst stürzt Safari bei großen Sammlungen ab)
+      if (ad > CF_WINDOW * 2) imgs.forEach((img) => { if (img.hasAttribute('src')) img.removeAttribute('src'); });
       return;
     }
     if (el.style.display === 'none') el.style.display = '';
-    if (img && !CF.fast && !img.hasAttribute('src')) { img.classList.remove('broken'); img.src = img.dataset.src; }
-    const sign = Math.sign(d);
-    const t = Math.min(ad, 1);
-    const x = ad <= 1 ? d * s * 0.6 : sign * (s * 0.6 + (ad - 1) * s * 0.2);
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${(-t * s * 0.6).toFixed(1)}px) rotateY(${(-sign * t * 64).toFixed(2)}deg)`;
-    el.style.zIndex = String(1000 - Math.round(ad * 10));
+    if (!CF.fast) {
+      imgs.forEach((img) => { if (!img.hasAttribute('src')) { img.classList.remove('broken'); img.src = img.dataset.src; } });
+    }
+    // Wie Cover Flow: das Cover dreht sich schon früh weg (r), während es zur Seite gleitet.
+    // So berühren sich zwei Cover in der Mitte einer Bewegung nie.
+    const c = Math.max(-1, Math.min(1, d));
+    const r = Math.min(1, ad * 1.6) * Math.sign(d);
+    const x = (c * 0.46 + d * 0.14) * s;
+    const z = -Math.min(1, ad) * 0.45 * s;
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-r * 70).toFixed(2)}deg)`;
+    el.style.zIndex = String(1000 - Math.round(ad * 100));
   });
   const cur = Math.max(0, Math.min(CF.entries.length - 1, Math.round(CF.pos)));
   if (cur !== CF.shown) {
@@ -381,9 +419,9 @@ function cfSettle() {
     const e = CF.entries[cur];
     if (!e || !$('#cf-stage')) return;
     CF.mem[`${CF.level}:${CF.key}`] = e.key;
-    const img = CF.els[cur]?.querySelector('img');
-    if (img && /\/front-250$/.test(img.dataset.src || '') && img.hasAttribute('src')) {
-      const hi = img.dataset.src.replace('/front-250', '/front-500');
+    const img = CF.els[cur]?.querySelector('.cf-front > .cf-cover img');
+    if (img && /(\/front-250|\/small)$/.test(img.dataset.src || '') && img.hasAttribute('src')) {
+      const hi = img.dataset.src.replace(/\/front-250$/, '/front-500').replace(/\/small$/, '/medium');
       const probe = new Image();
       probe.onload = () => { if (img.isConnected) img.src = hi; };
       probe.src = hi;
@@ -567,7 +605,7 @@ function fillArtistList() {
   const shown = q ? groups.filter((g) => norm(g.name).includes(q) || g.items.some((i) => norm(i.title).includes(q))) : groups;
   box.innerHTML = shown.length
     ? `<div class="list">${shown.map((g) => `<a class="lrow" href="#/interpreten/${enc(g.key)}">
-        ${coverHtml({ title: g.name, cover: groupCover(g) }, 'thumb')}
+        ${artistThumbHtml(g)}
         <span class="row-text"><span class="row-title">${esc(g.name)}</span><span class="row-sub">${esc(groupSub(g))}</span></span>
         ${chev()}</a>`).join('')}</div>`
     : `<p class="empty-small">Nichts gefunden.</p>`;
@@ -801,6 +839,7 @@ function openAdd() {
       toast(`„${it.title}“ hinzugefügt`);
       render();
       preloadDiscographies();
+      preloadArtistArt();
     },
   });
 }
@@ -1080,11 +1119,52 @@ async function saveScanRows() {
   toast(`${items.length === 1 ? '1 CD' : `${items.length} CDs`} hinzugefügt`);
   location.hash = '#/';
   preloadDiscographies();
+  preloadArtistArt();
 }
 
 // =====================================================================
 // 5) Lücken: Diskografien (MusicBrainz)
 // =====================================================================
+// ---------- Logos der Interpreten (TheAudioDB) ----------
+const artMem = new Map(); // Gruppen-Schlüssel -> { logo, thumb }
+let artLoading = null;
+
+function artistThumbHtml(g) {
+  const logo = artMem.get(g.key)?.logo;
+  return logo
+    ? `<div class="cover thumb artist-card"><img class="artist-logo" src="${esc(art.small(logo))}" loading="lazy" alt=""></div>`
+    : coverHtml({ title: g.name, cover: groupCover(g) }, 'thumb');
+}
+
+// Logos im Hintergrund holen und merken (gefunden: 90 Tage, nicht gefunden: 14 Tage)
+function preloadArtistArt() {
+  if (artLoading) return artLoading;
+  artLoading = (async () => {
+    const todo = [];
+    for (const g of libraryGroups()) {
+      if (g.various || artMem.has(g.key)) continue;
+      const c = await getCache(`art:${g.key}`);
+      if (c) {
+        artMem.set(g.key, c.data);
+        cfRefreshArtist(g.key);
+        const maxAge = (c.data.logo ? 90 : 14) * DAY;
+        if (Date.now() - c.at < maxAge) continue;
+      }
+      todo.push(g);
+    }
+    for (const g of todo) {
+      try {
+        const data = await art.artistArt({ mbid: g.mbid, name: g.name });
+        artMem.set(g.key, data);
+        await setCache(`art:${g.key}`, data);
+        cfRefreshArtist(g.key);
+        if (route()[0] === 'interpreten' && !route()[1]) fillArtistList();
+      } catch { /* nächstes Mal */ }
+    }
+  })().finally(() => { artLoading = null; });
+  return artLoading;
+}
+
 const discoMem = new Map();
 const discoTried = new Set();
 let preloading = null;
@@ -1315,7 +1395,7 @@ async function renderSettings() {
       <button class="cell action danger" data-action="clear-all"><span class="cell-label">Sammlung komplett löschen</span></button>
     </div>
 
-    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive</p>`;
+    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive · Logos: TheAudioDB</p>`;
   $('#gem-model').addEventListener('change', (e) => setSetting('geminiModel', e.target.value));
   $('#opt-live').addEventListener('change', async (e) => {
     state.includeLive = e.target.checked;
@@ -1412,6 +1492,7 @@ async function clearAll() {
   discoMem.clear();
   discoTried.clear();
   albumMem.clear();
+  artMem.clear();
   changed();
   toast('Alles gelöscht');
   location.hash = '#/';
@@ -1565,6 +1646,7 @@ async function init() {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
   preloadDiscographies();
+  preloadArtistArt();
 }
 
 init();

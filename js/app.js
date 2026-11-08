@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '2.10.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -235,7 +235,8 @@ function groupSub(g) {
 // =====================================================================
 // Navigation
 // =====================================================================
-let lastPage = '';
+let lastPage = null;
+let prevPage = null; // Seite davor (Cover Flow → zurück ins Regal)
 
 function route() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -248,7 +249,7 @@ function render() {
   state.current = null;
   const r = route();
   const key = r.join('/');
-  if (key !== lastPage) { window.scrollTo(0, 0); lastPage = key; }
+  if (key !== lastPage) { window.scrollTo(0, 0); prevPage = lastPage; lastPage = key; }
   const [page, id] = r;
   document.body.classList.toggle('flow-page', page === 'flow');
   document.body.classList.toggle('shelf-page', page === '');
@@ -730,6 +731,45 @@ async function cfOpenBooklet(i) {
   jewel.openBooklet(sc, bigCover(e.cover), !!e.missing, src);
 }
 
+// ---------- CD drehen: antippen = langsam anlaufen, ganz schnell, auslaufen (5 s) – und dabei das Album abspielen ----------
+let cdSpin = null;
+const SPIN_MS = 5000;
+const SPIN_EASE = 'cubic-bezier(0.55, 0, 0.45, 1)';
+
+// liegt der Finger auf der CD? (die CD liegt unter dem Rahmen, darum über ihre Lage auf dem Bildschirm prüfen)
+function cfDiscHit(i, x, y) {
+  const disc = CF.els[i]?.querySelector('.disc');
+  if (!disc) return false;
+  const r = disc.getBoundingClientRect();
+  if (!r.width || !r.height) return false;
+  const nx = (x - (r.left + r.width / 2)) / (r.width / 2);
+  const ny = (y - (r.top + r.height / 2)) / (r.height / 2);
+  return nx * nx + ny * ny <= 1;
+}
+
+function cfSpinDisc(i) {
+  const disc = CF.els[i]?.querySelector('.disc');
+  if (!disc || cdSpin?.playState === 'running') return;
+  const base = getComputedStyle(disc).transform;
+  const pre = base && base !== 'none' ? `${base} ` : '';
+  const turns = 22 * 360;
+  cdSpin = disc.animate([{ transform: `${pre}rotate(0deg)` }, { transform: `${pre}rotate(${turns}deg)` }], { duration: SPIN_MS, easing: SPIN_EASE });
+  // der Lichtreflex bleibt stehen, während sich die CD darunter dreht
+  try { disc.animate([{ transform: 'rotate(0deg)' }, { transform: `rotate(${-turns}deg)` }], { duration: SPIN_MS, easing: SPIN_EASE, pseudoElement: '::after' }); } catch {}
+  const e = CF.entries[i];
+  const sp = { artist: state.current?.g?.name || '', title: e.title, sid: albumMem.get(entryRgid(e))?.spotify || '' };
+  // mit Spotify-Verbindung sofort abspielen, sonst nach dem Drehen die Spotify-App öffnen
+  if (spConnected) spotifyPlay(sp);
+  else cdSpin.finished.then(() => { if (CF.opened === i) spotifyPlay(sp); }).catch(() => {});
+}
+
+// Cover Flow verlassen: zurück ins Regal
+function cfLeave() {
+  if (CF.level !== 'albums') return;
+  if (prevPage === '') history.back();
+  else location.hash = '#/';
+}
+
 // Eine Ebene zurück (ins Dunkle tippen, Escape)
 function cfStepBack() {
   if (jewel.bookletOpen()) { jewel.closeBooklet(); return true; }
@@ -745,7 +785,10 @@ const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, [d
 document.addEventListener('pointerdown', (e) => {
   const stage = $('#cf-stage');
   if (!stage || jewel.bookletOpen() || cfIgnore(e.target)) return;
-  if (CF.focused < 0 && !stage.contains(e.target)) return; // in der Übersicht nur auf der Bühne wischen
+  if (CF.focused < 0 && !stage.contains(e.target)) { // Übersicht: neben der Bühne ins Dunkle tippen = zurück ins Regal
+    cfDrag = { outside: true, x: e.clientX, y: e.clientY, cx: e.clientX, moved: false };
+    return;
+  }
   cancelAnimationFrame(CF.raf);
   cfDrag = {
     x: e.clientX, y: e.clientY, cx: e.clientX, pos: CF.pos, deg: CF.flipDeg, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false,
@@ -759,6 +802,7 @@ document.addEventListener('pointermove', (e) => {
   const dy = e.clientY - cfDrag.y;
   cfDrag.cx = e.clientX;
   if (Math.abs(dx) > 6 || Math.abs(dy) > 6) cfDrag.moved = true;
+  if (cfDrag.outside) return;
   if (CF.opened >= 0) return; // aufgeklappt: nichts verschieben
   if (CF.focused >= 0) { // ausgewählt: die Hülle folgt beim Umdrehen dem Finger
     if (!cfDrag.moved) return;
@@ -783,8 +827,13 @@ const cfEnd = () => {
   cfDrag = null;
   if (!$('#cf-stage')) return;
   const tap = !d.moved;
-  if (CF.opened >= 0) { // aufgeklappt: Booklet antippen = lesen, ins Dunkle = zuklappen
-    if (tap) { if (d.inLid) cfOpenBooklet(CF.opened); else if (!d.inJc) cfSetOpen(CF.opened, false); }
+  if (d.outside) { if (tap && CF.focused < 0) cfLeave(); return; }
+  if (CF.opened >= 0) { // aufgeklappt: Booklet antippen = lesen, CD antippen = drehen und abspielen, ins Dunkle = zuklappen
+    if (tap) {
+      if (d.inLid) cfOpenBooklet(CF.opened);
+      else if (cfDiscHit(CF.opened, d.x, d.y)) cfSpinDisc(CF.opened);
+      else if (!d.inJc) cfSetOpen(CF.opened, false);
+    }
     return;
   }
   if (CF.focused >= 0) {
@@ -802,6 +851,7 @@ const cfEnd = () => {
   if (tap) {
     if (d.item) cfSelect(Number(d.item.dataset.i));
     else if (Math.abs(CF.pos - Math.round(CF.pos)) > 0.002) cfGo(Math.round(CF.pos)); // daneben getippt: sauber einrasten
+    else cfLeave(); // ins Dunkle getippt: zurück ins Regal
     return;
   }
   CF.pending = -1;
@@ -818,7 +868,7 @@ window.addEventListener('resize', () => {
 });
 document.addEventListener('keydown', (e) => {
   if (!$('#cf-stage') || document.activeElement?.tagName === 'INPUT') return;
-  if (e.key === 'Escape') { cfStepBack(); return; }
+  if (e.key === 'Escape') { if (!cfStepBack()) cfLeave(); return; }
   if (CF.focused >= 0) return;
   if (e.key === 'ArrowRight') cfGo(Math.round(CF.target) + 1);
   if (e.key === 'ArrowLeft') cfGo(Math.round(CF.target) - 1);
@@ -1075,18 +1125,17 @@ function npHtml() {
       <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 32)}</button>
       <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 30)}</button>
     </div>
-    <div class="np-vol">
+    <div class="np-vol" hidden>
       <span class="np-vol-ic">${icon('volLow', 18)}</span>
       <input class="np-range" id="np-vol" type="range" min="0" max="100" step="1" value="50" style="--v:50%" aria-label="Lautstärke">
       <span class="np-vol-ic">${icon('volHigh', 18)}</span>
-      <span class="np-vol-hint" hidden>Lautstärke über die Tasten am Gerät</span>
     </div>
   </div>`;
 }
 
 // ---------- Lautstärke ----------
 // Spotify erlaubt das Regeln nur bei manchen Geräten (z. B. Lautsprecher, PC). Das iPhone selbst
-// meldet oft „geht nicht“ – dann erscheint stattdessen ein kurzer Hinweis.
+// meldet oft „geht nicht“ – dann wird der Regler einfach weggelassen.
 let npVolBusy = 0; // Zeitpunkt der letzten eigenen Änderung (damit das Nachfragen den Regler nicht zurückspringen lässt)
 let npVolTimer = 0;
 let npDeviceId = '';
@@ -1095,8 +1144,7 @@ function npShowVolume(device) {
   const box = $('#np .np-vol');
   if (!box) return;
   const ok = !!device && device.supports_volume !== false && typeof device.volume_percent === 'number';
-  box.classList.toggle('off', !ok);
-  box.querySelector('.np-vol-hint').hidden = ok || !device;
+  box.hidden = !ok; // lässt sich die Lautstärke nicht regeln, gibt es auch keinen Regler
   const input = $('#np-vol');
   if (ok && Date.now() - npVolBusy > 2500) {
     input.value = device.volume_percent;
@@ -1681,6 +1729,118 @@ function preloadArtistArt() {
   return artLoading;
 }
 
+// =====================================================================
+// Alle Bilder vorladen (Einstellungen): für jedes Album Cover, Rückseite, Innenseite, CD, Booklet und Titelliste
+// einmal holen – danach kommt alles aus dem Speicher (Service Worker: Cover-Speicher, Datenbank: Fundstellen).
+// =====================================================================
+const PL = { running: false, stop: false, phase: '', dDone: 0, dTotal: 0, done: 0, total: 0, failed: 0, usage: 0, lock: null };
+
+async function plLock() {
+  if (!PL.running || document.visibilityState !== 'visible') return;
+  try { PL.lock = await navigator.wakeLock?.request('screen'); } catch {}
+}
+// iOS gibt die Sperre frei, sobald die App kurz im Hintergrund war – beim Zurückkommen neu anfordern
+document.addEventListener('visibilitychange', () => { if (PL.running && document.visibilityState === 'visible') plLock(); });
+
+async function plAlbum({ rgid, cover }) {
+  const urls = cover ? [cover, bigCover(cover)] : [];
+  let sc = null;
+  if (rgid) {
+    const [scan] = await Promise.all([jewel.findScan(rgid), loadAlbumDetails(rgid).catch(() => null)]);
+    sc = scan;
+    if (sc) urls.push(sc.small, sc.big, sc.front, sc.frontSmall, sc.frontBig, sc.medium, sc.tray, ...(sc.booklet || []).flatMap((p) => [p.s, p.b]));
+  }
+  const timeoutSignal = () => (AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined);
+  await Promise.all([...new Set(urls.filter(Boolean))].map((u) => fetch(u, { signal: timeoutSignal() }).then((r) => r.blob()).catch(() => null)));
+  if (sc) await jewel.ensureBook(sc).catch(() => {}); // Booklet-Seiten vorbereiten (kommt jetzt aus dem Speicher)
+}
+
+async function plStart() {
+  if (PL.running) return;
+  Object.assign(PL, { running: true, stop: false, phase: 'disco', dDone: 0, dTotal: 0, done: 0, total: 0, failed: 0, usage: 0 });
+  plUpdate();
+  await plLock();
+  try {
+    // 1) Diskografien – damit auch die fehlenden Alben dabei sind
+    const groups = libraryGroups();
+    const withMbid = groups.filter((g) => g.mbid);
+    PL.dTotal = withMbid.length;
+    for (const g of withMbid) {
+      if (PL.stop) break;
+      await getDisco(g.mbid).catch(() => null);
+      PL.dDone++;
+      plUpdate();
+    }
+    // 2) alle Alben (eigene und fehlende), jedes nur einmal
+    const seen = new Set();
+    const list = [];
+    for (const g of groups) {
+      for (const e of albumEntries(g)) {
+        const rgid = entryRgid(e);
+        const key = rgid || e.cover || e.key;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        list.push({ rgid, cover: e.cover });
+      }
+    }
+    PL.phase = 'images';
+    PL.total = list.length;
+    plUpdate();
+    let next = 0;
+    const worker = async () => {
+      while (!PL.stop && next < list.length) {
+        const a = list[next++];
+        try { await plAlbum(a); } catch { PL.failed++; }
+        PL.done++;
+        plUpdate();
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]); // drei Alben gleichzeitig
+  } finally {
+    PL.running = false;
+    PL.phase = PL.stop ? 'stopped' : 'done';
+    try { await PL.lock?.release(); } catch {}
+    PL.lock = null;
+    try { PL.usage = (await navigator.storage?.estimate?.())?.usage || 0; } catch {}
+    plUpdate();
+    if (!PL.stop) toast(PL.failed ? `Fertig – ${PL.failed} Alben waren nicht erreichbar` : 'Alle Bilder sind geladen');
+  }
+}
+
+function plUpdate() {
+  const box = $('#pl-box');
+  if (!box) return;
+  const label = $('#pl-btn .cell-label');
+  label.textContent = PL.running ? 'Anhalten' : (PL.phase === 'done' ? 'Nochmal prüfen' : 'Alle Bilder laden');
+  box.hidden = !PL.phase;
+  const pct = PL.total ? Math.floor((PL.done / PL.total) * 100) : 0;
+  let left = '';
+  let right = '';
+  let width = 0;
+  if (PL.phase === 'disco') {
+    left = `Diskografien: ${PL.dDone} von ${PL.dTotal}`;
+    right = '0 %';
+  } else if (PL.phase === 'images') {
+    left = `${PL.done} von ${PL.total} Alben`;
+    right = `${pct} %`;
+    width = pct;
+  } else if (PL.phase === 'stopped') {
+    left = `Angehalten bei ${PL.done} von ${PL.total || '?'} Alben`;
+    right = `${pct} %`;
+    width = pct;
+  } else if (PL.phase === 'done') {
+    left = `Fertig: ${PL.total} Alben`;
+    right = '100 %';
+    width = 100;
+  }
+  const extra = PL.phase === 'done' || PL.phase === 'stopped'
+    ? [PL.failed ? `${PL.failed} nicht erreichbar – nochmal drücken lädt den Rest` : '', PL.usage ? `Belegt: ${Math.round(PL.usage / 1048576)} MB` : ''].filter(Boolean).join(' · ')
+    : 'App bitte geöffnet lassen – das Display bleibt an.';
+  box.innerHTML = `<div class="progress-head"><span>${esc(left)}</span><span class="muted">${right}</span></div>
+    <div class="bar big ${PL.phase === 'done' ? 'done' : ''}"><i style="width:${width}%"></i></div>
+    <p class="pl-note">${esc(extra)}</p>`;
+}
+
 const discoMem = new Map();
 const discoTried = new Set();
 let preloading = null;
@@ -1897,6 +2057,13 @@ async function renderSettings() {
     </div>
     <p class="group-footer">Klassisch: schwarzer, geriffelter Träger. Klar: durchsichtiger Träger – darunter sieht man den bedruckten Einleger. Die Kratzer glänzen nur dort, wo gerade Licht hinfällt.</p>
 
+    <h3 class="group-title">Bilder</h3>
+    <div class="group">
+      <button class="cell action" id="pl-btn" data-action="preload-all">${cellIc('download')}<span class="cell-label">Alle Bilder laden</span></button>
+    </div>
+    <div class="group-footer pl-box" id="pl-box" hidden></div>
+    <p class="group-footer">Lädt für alle Alben – auch die fehlenden – Cover, Rückseite, Innenseite, CD, Booklet und Titelliste einmal auf dein iPhone. Danach musst du beim Öffnen nicht mehr warten. Das dauert je nach Sammlung eine halbe Stunde oder länger; lass die App so lange geöffnet. Nochmal drücken lädt nur, was noch fehlt.</p>
+
     <h3 class="group-title">Fotoerkennung</h3>
     <div class="group">
       <div class="cell">${cellIc('key')}<span class="cell-label">Gemini-Schlüssel</span>
@@ -1958,6 +2125,7 @@ async function renderSettings() {
     await setSetting('scratches', state.scratches);
   });
   if (spConnected) fillSpDevices();
+  plUpdate();
   $('#opt-live').addEventListener('change', async (e) => {
     state.includeLive = e.target.checked;
     await setSetting('includeLive', state.includeLive);
@@ -2194,6 +2362,7 @@ const actions = {
 
   // Knöpfe auf der Rückseite einer umgedrehten Hülle
   'jc-list': (el) => { el.closest('.jc')?.classList.toggle('show-list'); },
+  'preload-all': () => { if (PL.running) { PL.stop = true; plUpdate(); } else plStart(); },
 
   // Regal: Reihe antippen -> Interpret im Cover Flow
   'shelf-open': (el) => {

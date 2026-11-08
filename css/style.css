@@ -474,6 +474,8 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 .bar.big { height: 6px; border-radius: 3px; margin: 8px 0 16px; }
 .progress-head { display: flex; justify-content: space-between; font-size: 15px; font-weight: 600; letter-spacing: -0.23px; }
 .progress-head .muted { font-weight: 400; }
+.pl-box .bar.big { margin: 8px 0 6px; }
+.pl-note { font-size: 13px; color: var(--muted); }
 .wish .icon-btn { margin-right: -10px; color: var(--faint); }
 
 /* Schalter wie iOS 26 */
@@ -865,8 +867,10 @@ body.flow-page::before { display: none; } /* reines Schwarz wie beim iPod */
 /* „Läuft gerade“ sitzt oben in der Kopfzeile zwischen den runden Knöpfen */
 .cf-area { position: relative; }
 .navbar .nav-title { overflow: visible; }
+/* „Läuft gerade“ immer genau in der Mitte: die Mitte darf breiter sein als ein Seitentitel, die Kapsel aber nie breiter als der Platz zwischen den Knöpfen */
+.navbar .nav-title:has(.np-now) { display: flex; justify-content: center; max-width: none; min-width: 0; }
 .np-now {
-  display: inline-flex; align-items: center; gap: 7px; max-width: min(56vw, 300px);
+  display: inline-flex; align-items: center; gap: 7px; max-width: min(calc(100vw - 2 * 16px - 2 * 44px - 2 * 8px - 4px), 320px);
   padding: 4px 12px 4px 4px; border-radius: 999px; color: var(--text);
   background: var(--glass-dark);
 }
@@ -918,8 +922,7 @@ body.np-paused .eq i { animation-play-state: paused; transform: scaleY(0.35); }
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
 .np-range::-moz-range-thumb { width: 22px; height: 22px; border: 0; border-radius: 50%; background: #fff; }
-.np-vol-hint { flex: 1; text-align: center; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); }
-.np-vol.off .np-range, .np-vol.off .np-vol-ic { display: none; }
+
 
 
 @media (prefers-reduced-motion: reduce) {

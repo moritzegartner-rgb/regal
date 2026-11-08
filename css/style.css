@@ -778,7 +778,43 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 .sheet-group { margin-top: 18px; text-align: left; background: rgba(255, 255, 255, 0.07); }
 .sheet .group + .group, .sheet-group + .tiny { margin-top: 14px; }
 
-/* Startbildschirm: nur das Blättern, keine Leiste */
+/* =========================================================
+   Startbildschirm: CD-Regal – schwarzer Klavierlack, eine Reihe pro Interpret
+   ========================================================= */
+body.shelf-page::before { display: none; } /* reines Schwarz */
+.shelf { margin: 0 -16px; padding: 0 0 8px; }
+.sh-row { display: block; padding: 8px 0 0; cursor: pointer; }
+.sh-head { display: flex; align-items: baseline; gap: 8px; padding: 0 16px; }
+.sh-head b { min-width: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.43px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-head span { flex: none; font-size: 13px; color: var(--muted); }
+/* die CDs stehen nebeneinander; sehr viele Alben: Reihe seitlich wischen */
+.sh-spines { display: flex; align-items: flex-end; gap: 1px; padding: 6px 16px 0; overflow-x: auto; scrollbar-width: none; }
+.sh-spines::-webkit-scrollbar { display: none; }
+/* Regalboden: glänzende Vorderkante, ganz zarter Lackschimmer – keine Spiegelung */
+.sh-floor { position: relative; height: 8px; pointer-events: none; background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0)); }
+.sh-floor::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.32) 25%, rgba(255, 255, 255, 0.16) 75%, rgba(255, 255, 255, 0)); }
+/* CD-Rücken (wie auf der Hülle): Kunststoff-Kante links, Inlay, Fuge, Kappen oben und unten, Glanz */
+.sh-sp { position: relative; flex: none; width: var(--spW); height: var(--spH); background: #0d0d0e; border-radius: 1px;
+  transition: transform 0.3s cubic-bezier(0.3, 0.8, 0.3, 1); }
+.sh-sp i { position: absolute; display: block; }
+.sh-pl { left: 0; top: 0; bottom: 0; width: 21%; background: linear-gradient(90deg, rgba(255, 255, 255, 0.5) 0 1px, rgba(255, 255, 255, 0.16) 1px, rgba(255, 255, 255, 0.26) 55%, rgba(255, 255, 255, 0.08)), #26262b; }
+.sh-in { left: 21%; right: 2.5%; top: 2.4%; bottom: 2.4%; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  background: #2c2c2e 0 50% / auto 100% no-repeat; }
+.sh-in span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; font-weight: 700; font-size: calc(var(--spW) * 0.5); letter-spacing: 0.05em;
+  text-transform: uppercase; color: #fff; text-shadow: 0 0 2px rgba(0, 0, 0, 0.95), 0 0 5px rgba(0, 0, 0, 0.6); }
+.sh-sp.scan .sh-in span { display: none; }
+.sh-se { right: 0; top: 0; bottom: 0; width: 1px; background: #000; box-shadow: -1px 0 0 rgba(255, 255, 255, 0.28); }
+.sh-cap { left: 0; right: 0; height: 2.4%; background: linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0 1px, rgba(255, 255, 255, 0.14) 1px, rgba(255, 255, 255, 0.24) 60%, rgba(0, 0, 0, 0.5)), #2a2a2f; }
+.sh-cap.t { top: 0; }
+.sh-cap.b { bottom: 0; transform: scaleY(-1); }
+.sh-gl { inset: 0; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 18%, rgba(255, 255, 255, 0) 82%, rgba(0, 0, 0, 0.25)); }
+.sh-sp.missing { filter: grayscale(1) brightness(0.55); } /* Alben, die du nicht hast */
+.sh-row.go .sh-sp { transform: translateY(-6px); } /* angetippt: die CDs rücken kurz nach vorn */
+
+/* Cover Flow: nur das Blättern, keine Leiste */
 body.flow-page #view { padding-bottom: calc(var(--safe-bottom) + 12px); }
 body.flow-page { overscroll-behavior: none; }
 .flow-empty { padding-top: 18vh; }

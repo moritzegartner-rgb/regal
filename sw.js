@@ -1,5 +1,5 @@
 // Service Worker: App funktioniert auch ohne Netz, Cover werden zwischengespeichert
-const VERSION = 'regal-v18';
+const VERSION = 'regal-v19';
 const COVERS = 'regal-covers';
 const SHELL = [
   './',
@@ -20,7 +20,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' – sonst landet evtl. eine alte Datei aus dem Browser-Zwischenspeicher im neuen Paket
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -39,7 +40,8 @@ self.addEventListener('fetch', (e) => {
   // Eigene Dateien: zuerst aus dem Netz (damit Updates ankommen), sonst aus dem Speicher
   if (url.origin === self.location.origin) {
     e.respondWith(
-      fetch(req)
+      // no-cache: beim Server nachfragen, ob sich die Datei geändert hat (sonst passen neue und alte Dateien nicht zusammen)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();

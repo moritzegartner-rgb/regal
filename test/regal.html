@@ -22,15 +22,15 @@
 
   .shelf { padding: calc(var(--safe-top) + 64px) 0 calc(var(--safe-bottom) + 40px); }
   /* eine Reihe = ein Interpret */
-  .row { position: relative; padding: 14px 0 0; cursor: pointer; }
+  .row { position: relative; padding: 8px 0 0; cursor: pointer; }
   .row-head { display: flex; align-items: baseline; gap: 8px; padding: 0 18px; }
   .row-head b { font-size: 17px; font-weight: 600; letter-spacing: -.43px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row-head span { flex: none; font-size: 13px; color: rgba(235,235,245,.5); }
   /* die CDs stehen auf schwarzem Klavierlack und spiegeln sich leicht darin */
-  .spines { display: flex; align-items: flex-end; gap: 1px; padding: 8px 18px 0; overflow-x: auto; scrollbar-width: none;
-    -webkit-box-reflect: below 1px linear-gradient(to bottom, rgba(0,0,0,0) 62%, rgba(0,0,0,.32)); }
+  .spines { display: flex; align-items: flex-end; gap: 1px; padding: 6px 18px 0; overflow-x: auto; scrollbar-width: none;
+  }
   .spines::-webkit-scrollbar { display: none; }
-  .lacquer { height: calc(var(--spH) * .36); margin-top: 1px; position: relative; pointer-events: none;
+  .lacquer { height: 8px; margin-top: 1px; position: relative; pointer-events: none;
     background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 30%); }
   /* Vorderkante des Lackbodens: ein feiner Glanz */
   .lacquer::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
@@ -130,7 +130,7 @@ function allAlbums(a) {
 // ---------- Reihen ----------
 let ARTISTS = [];
 function sizes() {
-  const spH = Math.round(Math.max(120, Math.min(170, innerHeight * 0.19)));
+  const spH = Math.round(Math.max(110, Math.min(150, innerHeight * 0.165)));
   shelf.style.setProperty('--spH', `${spH}px`);
   shelf.style.setProperty('--spW', `${(spH * 0.083).toFixed(1)}px`); // Rücken: 10,4 × 125 mm
 }

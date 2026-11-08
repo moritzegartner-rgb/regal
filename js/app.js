@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.8.0';
+const APP_VERSION = '2.9.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -250,8 +250,9 @@ function render() {
   const key = r.join('/');
   if (key !== lastPage) { window.scrollTo(0, 0); lastPage = key; }
   const [page, id] = r;
-  document.body.classList.toggle('flow-page', page === '' || page === 'flow');
-  if (page === '') renderFlow('artists');
+  document.body.classList.toggle('flow-page', page === 'flow');
+  document.body.classList.toggle('shelf-page', page === '');
+  if (page === '') renderShelf();
   else if (page === 'flow') renderFlow('albums', id);
   else if (page === 'menu') renderMenu();
   else if (page === 'interpreten') { if (id) renderArtistPage(id); else renderArtistList(); }
@@ -264,7 +265,101 @@ function render() {
 }
 
 // =====================================================================
-// 1) Durchblättern – Startbildschirm (Interpreten) und Alben eines Interpreten
+// 0) Startbildschirm: CD-Regal – eine Reihe pro Interpret, alle Studioalben als CD-Rücken
+//    (eigene farbig, fehlende grau). Antippen öffnet den Interpreten im Cover Flow.
+// =====================================================================
+const SHELF = { scroll: 0, io: null };
+
+function shelfSize() {
+  const el = $('#shelf');
+  if (!el) return;
+  const h = Math.round(Math.max(110, Math.min(150, window.innerHeight * 0.165)));
+  el.style.setProperty('--spH', `${h}px`);
+  el.style.setProperty('--spW', `${(h * 0.083).toFixed(1)}px`); // Rücken: 10,4 × 125 mm
+}
+
+function shelfSpine(g, e, k) {
+  const label = g.various ? e.title : `${g.name} · ${e.title}`;
+  return `<div class="sh-sp ${e.missing ? 'missing' : ''}" data-k="${k}"><i class="sh-pl"></i>
+    <i class="sh-in" style="background-image:url('${esc(e.cover || '')}')"><span>${esc(label)}</span></i>
+    <i class="sh-se"></i><i class="sh-cap t"></i><i class="sh-cap b"></i><i class="sh-gl"></i></div>`;
+}
+
+function shelfFill(el, g) {
+  const list = albumEntries(g);
+  el._list = list;
+  el.dataset.n = String(list.length);
+  el.innerHTML = `<div class="sh-head"><b>${esc(g.name)}</b><span>${esc(groupSub(g))}</span></div>
+    <div class="sh-spines">${list.map((e, k) => shelfSpine(g, e, k)).join('')}</div><div class="sh-floor"></div>`;
+  if (el.dataset.seen) shelfScans(el);
+}
+
+// echte Rücken (Foto der Hüllen-Rückseite) einsetzen – eigene Alben zuerst
+async function shelfScans(el) {
+  const list = el._list || [];
+  const order = list.map((e, k) => [e, k]).sort((a, b) => (a[0].missing ? 1 : 0) - (b[0].missing ? 1 : 0));
+  for (const [e, k] of order) {
+    const rgid = entryRgid(e);
+    if (!rgid) continue;
+    const sc = await jewel.findScan(rgid).catch(() => null);
+    if (el._list !== list || !el.isConnected) return; // Reihe neu gebaut oder Seite verlassen
+    if (!sc || !(sc.ratio > 1.22)) continue;
+    const inl = el.querySelector(`.sh-sp[data-k="${k}"] .sh-in`);
+    if (!inl) continue;
+    const total = 118 * sc.ratio;
+    const f = Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total)); // Anteil des Rückens am Foto
+    inl.style.backgroundImage = `url("${sc.small}")`;
+    inl.style.backgroundSize = `${(100 / f).toFixed(1)}% 100%`;
+    inl.style.backgroundPosition = '100% 50%';
+    inl.parentElement.classList.add('scan');
+  }
+}
+
+function renderShelf() {
+  const groups = libraryGroups();
+  if (!groups.length) { renderFlow('artists'); return; } // noch keine CDs: Hinweis wie bisher
+  const nav = header('', {
+    compact: true,
+    center: spConnected ? npNowHtml() : '',
+    left: `<a class="glass-btn round" href="#/menu" aria-label="Menü">${icon('menu', 22)}</a>`,
+    actions: `<button class="glass-btn round" data-action="add-menu" aria-label="CDs hinzufügen">${icon('plus', 24)}</button>`,
+  });
+  view().innerHTML = `${nav}
+    <div class="shelf" id="shelf">${groups.map((g) => `<section class="sh-row" data-action="shelf-open" data-key="${esc(g.key)}"></section>`).join('')}</div>
+    ${spConnected ? `<div hidden>${npHtml()}</div>` : ''}`;
+  shelfSize();
+  const rows = [...document.querySelectorAll('.sh-row')];
+  rows.forEach((el, i) => shelfFill(el, groups[i]));
+  if (spConnected) npTick(); // „Läuft gerade“ oben in der Kopfzeile
+  // Fotos der Rücken erst laden, wenn die Reihe ins Bild kommt
+  SHELF.io?.disconnect();
+  SHELF.io = new IntersectionObserver((ents) => {
+    for (const en of ents) {
+      if (!en.isIntersecting || en.target.dataset.seen) continue;
+      en.target.dataset.seen = '1';
+      shelfScans(en.target);
+    }
+  }, { rootMargin: '200px 0px' });
+  rows.forEach((el) => SHELF.io.observe(el));
+  if (SHELF.scroll) window.scrollTo(0, SHELF.scroll); // zurück an die Stelle, von der aus du einen Interpreten geöffnet hast
+}
+
+// Diskografie eingetroffen: Reihe neu aufbauen, wenn sich etwas geändert hat
+function shelfRefresh(groups = libraryGroups()) {
+  if (!$('#shelf')) return;
+  const byKey = new Map(groups.map((g) => [g.key, g]));
+  document.querySelectorAll('.sh-row').forEach((el) => {
+    const g = byKey.get(el.dataset.key);
+    if (!g) return;
+    if (albumEntries(g).length === Number(el.dataset.n) && el.querySelector('.sh-head span')?.textContent === groupSub(g)) return;
+    shelfFill(el, g);
+  });
+}
+
+addEventListener('resize', shelfSize);
+
+// =====================================================================
+// 1) Durchblättern – Alben eines Interpreten (Cover Flow)
 // =====================================================================
 const CF = {
   level: 'artists', key: '', entries: [], els: [], pos: 0, target: 0, size: 200,
@@ -746,7 +841,7 @@ function renderMenu() {
   const groups = libraryGroups();
   view().innerHTML = `${header('Regal', { back: true })}
     <div class="group">
-      <a class="cell" href="#/">${cellIc('flow')}<span class="cell-label">Durchblättern</span>${chev()}</a>
+      <a class="cell" href="#/">${cellIc('flow')}<span class="cell-label">Regal</span>${chev()}</a>
       <a class="cell" href="#/interpreten">${cellIc('user')}<span class="cell-label">Interpreten</span><span class="cell-value">${groups.length}</span>${chev()}</a>
       <a class="cell" href="#/alben">${cellIc('disc')}<span class="cell-label">Alben</span><span class="cell-value">${state.items.length}</span>${chev()}</a>
     </div>
@@ -1644,6 +1739,7 @@ function preloadDiscographies() {
       discoTried.add(g.mbid);
       try { await getDisco(g.mbid); } catch { /* später nochmal */ }
       if (route()[0] === 'luecken') fillGaps();
+      shelfRefresh();
     }
   })().finally(() => {
     preloading = null;
@@ -1657,6 +1753,7 @@ function refreshOverviews() {
   const page = route()[0];
   if (page === 'luecken') fillGaps();
   if (page === 'interpreten' && !route()[1]) fillArtistList();
+  if (page === '') shelfRefresh();
 }
 
 function gapRow({ href, name, owned, total, loading, failed }) {
@@ -2097,6 +2194,13 @@ const actions = {
 
   // Knöpfe auf der Rückseite einer umgedrehten Hülle
   'jc-list': (el) => { el.closest('.jc')?.classList.toggle('show-list'); },
+
+  // Regal: Reihe antippen -> Interpret im Cover Flow
+  'shelf-open': (el) => {
+    SHELF.scroll = window.scrollY;
+    el.classList.add('go');
+    setTimeout(() => { location.hash = `#/flow/${enc(el.dataset.key)}`; }, 170);
+  },
   'cf-more': (el) => {
     const x = flowAlbum(el);
     if (!x) return;

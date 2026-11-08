@@ -21,6 +21,7 @@
   .info { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 50px + 56vh + 4px); text-align: center; }
   .info b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.45px; }
   .info span { font-size: 15px; color: rgba(235,235,245,.6); }
+  .info small { display: block; margin-top: 4px; font-size: 12px; color: rgba(235,235,245,.38); }
   .opts { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 18px); display: flex; flex-direction: column; align-items: center; gap: 12px; }
   .row { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .row small { font-size: 13px; color: rgba(235,235,245,.6); }
@@ -85,7 +86,7 @@
 
   /* Glanzschicht des klaren Plastiks – nur über dem klaren Teil, nicht über dem matten Rand */
   .gloss { position: absolute; top: 0; bottom: 0; left: 8%; right: 0; overflow: hidden; pointer-events: none; }
-  .gloss.bk { left: 0; right: 6%; }
+  .gloss.bk { left: 0; right: 0; }
   .lip { position: absolute; left: 0; right: 0; height: 1.3%; }
   .lip.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)); box-shadow: 0 .5px 0 rgba(255,255,255,.18); }
   .lip.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); box-shadow: 0 -.5px 0 rgba(255,255,255,.14); }
@@ -136,26 +137,39 @@
 
   /* ---------- Rückseite: Einleger mit Titelliste hinter dem klaren Boden ---------- */
   .back { overflow: hidden; border-radius: 1px; background: #0b0b0c; }
-  .bk-inlay { position: absolute; left: 1.8%; right: 6.5%; top: 2.6%; bottom: 2.6%; overflow: hidden; display: flex; flex-direction: column;
-    padding: 5.5% 6% 4%; color: #fff; letter-spacing: 0;
+  /* Einleger: 138 × 118 mm im 142 × 125 mm großen Boden */
+  .bk-inlay { position: absolute; left: 1.4%; right: 1.4%; top: 2.8%; bottom: 2.8%; overflow: hidden; color: #fff; letter-spacing: 0;
     background: linear-gradient(180deg, rgba(8,8,10,.6), rgba(8,8,10,.8)), var(--img) 35% 45% / 280% auto no-repeat, #1c1c1e;
     box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7); }
+  /* echter Scan aus dem Cover Art Archive: Mitte = Rückseite, die Rücken werden abgeschnitten */
+  .jc.has-scan .bk-inlay { background: var(--scan) 50% 50% / var(--bks, cover) no-repeat, #1c1c1e; }
+  .bk-gen { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 5.5% 6% 4%; }
+  .jc.has-scan .bk-gen { visibility: hidden; background: rgba(8,8,10,.86); }
+  .jc.has-scan.show-list .bk-gen { visibility: visible; }
+  .bk-btns { position: absolute; right: 4%; bottom: 5%; display: flex; gap: calc(var(--s) * .025); }
+  .bk-btn { width: calc(var(--s) * .1); height: calc(var(--s) * .1); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .bk-btn svg { width: 46%; height: 46%; }
+  .bk-btn.play { background: #fff; color: #000; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+  .bk-btn.play svg { margin-left: 8%; }
+  .bk-btn.list { background: rgba(28,28,30,.88); color: #fff; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.35), 0 1px 4px rgba(0,0,0,.6); }
+  .jc:not(.has-scan) .bk-btn.list { display: none; }
+  .jc.show-list .bk-btn.list { background: #fff; color: #000; }
   .bk-head { display: flex; align-items: center; gap: 4%; }
   .bk-head div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .bk-head small { font-size: calc(var(--s) * .032); font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.7); }
   .bk-head b { font-size: calc(var(--s) * .062); font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bk-head .play { flex: none; width: calc(var(--s) * .11); height: calc(var(--s) * .11); border-radius: 50%; background: #fff; color: #000;
-    display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,.5); }
-  .bk-head .play svg { width: 44%; height: 44%; margin-left: 8%; }
   .bk-inlay ol { flex: 1; min-height: 0; margin: calc(var(--s) * .035) 0 0; padding: 0; list-style: none; overflow: hidden;
     --lh: calc(var(--s) * .56 / var(--rows)); font-size: min(calc(var(--s) * .043), calc(var(--lh) * .72)); line-height: var(--lh); color: rgba(255,255,255,.92); }
   .bk-inlay ol.two { columns: 2; column-gap: calc(var(--s) * .04); }
   .bk-inlay li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; break-inside: avoid; }
   .bk-inlay li b { display: inline-block; min-width: 1.7em; font-weight: 600; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
-  .bk-foot { display: flex; align-items: flex-end; justify-content: space-between; font-size: calc(var(--s) * .026); color: rgba(255,255,255,.5); }
+  .bk-foot { display: flex; align-items: flex-end; gap: 5%; font-size: calc(var(--s) * .026); color: rgba(255,255,255,.5); }
   .barcode { display: block; width: calc(var(--s) * .17); height: calc(var(--s) * .075); border: calc(var(--s) * .008) solid #fff;
     background: repeating-linear-gradient(90deg, #111 0 1px, #fff 1px 2px, #111 2px 4px, #fff 4px 5px, #111 5px 6px, #fff 6px 8px, #111 8px 9px, #fff 9px 11px); }
-  .bk-hinge { position: absolute; right: 0; top: 0; bottom: 0; width: 6%; background: linear-gradient(270deg, #1d1d20, #19191b 60%, #202023); box-shadow: inset 1px 0 0 rgba(0,0,0,.6); }
+  /* Rücken aus dem Scan: rechter Streifen = Scharnier-Seite, linker Streifen = Öffnungs-Seite */
+  .jc.has-spine .side .inlay { top: 2.8%; bottom: 2.8%; background: var(--scan) 100% 50% / var(--spw) 100% no-repeat, #2c2c2e; }
+  .jc.has-spine .side-r .inlay { background-position: 0 50%; }
+  .jc.has-spine .spine { display: none; }
 
   /* ---------- Spiegelung auf dem Boden: die ganze Hülle (mit Rücken) gespiegelt ---------- */
   .mirror { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-style: preserve-3d; pointer-events: none;
@@ -168,7 +182,7 @@
 <body>
 <div class="top" id="hint">Wischen zum Blättern · Tippen zum Umdrehen</div>
 <div class="stage" id="stage"></div>
-<div class="info"><b id="t"></b><span id="u"></span></div>
+<div class="info"><b id="t"></b><span id="u"></span><small id="src"></small></div>
 <div class="opts">
   <div class="row"><small>Ansicht</small>
     <div class="seg" id="mode"><button data-v="flow" class="on">Blättern</button><button data-v="inspect">Von nah drehen</button></div>
@@ -193,6 +207,7 @@ const ALBUMS = [
 const TRACKS = ['Burnout', 'Having a Blast', 'Chump', 'Longview', 'Welcome to Paradise', 'Pulling Teeth', 'Basket Case', 'She', 'Sassafras Roots', 'When I Come Around', 'Coming Clean', 'Emenius Sleepus', 'In the End', 'F.O.D.'];
 const cover = (a, px) => `https://coverartarchive.org/release-group/${a[2]}/front-${px}`;
 const PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4v16l13 -8z" fill="currentColor"/></svg>';
+const LIST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg>';
 
 // Zufall mit festem Startwert: jede Hülle hat immer dieselben kleinen Macken
 function rng(seed) {
@@ -315,13 +330,12 @@ function sideHtml(a, which, full) {
 function backHtml(a, i, full) {
   const n = TRACKS.length, cols = n > 9 ? 2 : 1, rows = Math.ceil(n / cols);
   return `<div class="face back">
-    <div class="bk-inlay">${full ? `
-      <div class="bk-head"><div><small>Green Day</small><b>${a[0]}</b></div><span class="play">${PLAY}</span></div>
+    <div class="bk-inlay">${full ? `<div class="bk-gen">
+      <div class="bk-head"><div><small>Green Day</small><b>${a[0]}</b></div></div>
       <ol class="${cols === 2 ? 'two' : ''}" style="--rows:${rows}">${TRACKS.map((t, k) => `<li><b>${k + 1}</b>${t}</li>`).join('')}</ol>
-      <div class="bk-foot"><span>℗ ${a[1]} Green Day</span><i class="barcode"></i></div>` : ''}
+      <div class="bk-foot"><i class="barcode"></i><span>℗ ${a[1]} Green Day</span></div></div>` : ''}
     </div>
-    <div class="bk-hinge"></div>
-    ${full ? gloss(i + 5, 'bk', false) : ''}
+    ${full ? gloss(i + 5, 'bk', false) + `<div class="bk-btns"><span class="bk-btn list" data-btn="list">${LIST}</span><span class="bk-btn play" data-btn="play">${PLAY}</span></div>` : ''}
   </div>`;
 }
 const BEVELS = '<div class="face bev fl"></div><div class="face bev fr"></div><div class="face bev bl"></div><div class="face bev br"></div>';
@@ -386,6 +400,7 @@ function layout() {
     shown = cur;
     document.getElementById('t').textContent = ALBUMS[cur][0];
     document.getElementById('u').textContent = `Green Day · ${ALBUMS[cur][1]}`;
+    showSrc();
     if (flipped >= 0 && flipped !== cur) { els[flipped].classList.remove('flipped'); flipped = -1; }
   }
 }
@@ -399,14 +414,29 @@ function animate() {
   raf = requestAnimationFrame(step);
 }
 function toggleFlip(i) {
-  if (flipped === i) { els[i].classList.remove('flipped'); flipped = -1; }
-  else { if (flipped >= 0) els[flipped].classList.remove('flipped'); els[i].classList.add('flipped'); flipped = i; }
+  if (flipped >= 0) els[flipped].firstElementChild.classList.remove('show-list');
+  if (flipped === i) { els[i].classList.remove('flipped'); flipped = -1; return; }
+  if (flipped >= 0) els[flipped].classList.remove('flipped');
+  els[i].classList.add('flipped'); flipped = i;
+  const jc = els[i].firstElementChild; // umgedreht: Scan in voller Auflösung, damit die Schrift scharf ist
+  if (jc.dataset.big && !jc.dataset.bigOk) { // erst fertig laden, dann einwechseln – so wird die Rückseite nie kurz dunkel
+    const im = new Image();
+    im.onload = () => { jc.dataset.bigOk = '1'; jc.style.setProperty('--scan', `url("${jc.dataset.big}")`); };
+    im.src = jc.dataset.big;
+  }
+}
+function pressButton(btn) {
+  const jc = btn.closest('.jc');
+  if (btn.dataset.btn === 'list') { jc.classList.toggle('show-list'); return; }
+  const h = document.getElementById('hint'), old = h.textContent;
+  h.textContent = '▶ In der App startet hier das Album bei Spotify';
+  setTimeout(() => { h.textContent = old; }, 1800);
 }
 
 let drag = null;
 stage.addEventListener('pointerdown', (e) => {
   cancelAnimationFrame(raf);
-  drag = { x: e.clientX, y: e.clientY, pos, rx, ry, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.item') };
+  drag = { x: e.clientX, y: e.clientY, pos, rx, ry, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.item'), btn: e.target.closest('[data-btn]') };
   try { stage.setPointerCapture(e.pointerId); } catch {}
 });
 stage.addEventListener('pointermove', (e) => {
@@ -429,6 +459,7 @@ stage.addEventListener('pointermove', (e) => {
 const end = () => {
   if (!drag) return;
   const d = drag; drag = null;
+  if (!d.moved && d.btn && d.btn.closest('.item.flipped')) { pressButton(d.btn); return; }
   if (mode === 'inspect') { if (!d.moved) toggleFlip(clampI(Math.round(pos))); return; }
   if (!d.moved) {
     const i = d.item ? Number(d.item.dataset.i) : Math.round(pos);
@@ -450,6 +481,89 @@ function seg(id, fn) {
     fn(b.dataset.v);
   });
 }
+// ================= Echte Rückseiten und Rücken aus dem Cover Art Archive =================
+// MusicBrainz kennt alle Ausgaben eines Albums; für CD-Ausgaben mit Rückseiten-Foto schauen wir im Cover Art Archive
+// nach einem Bild vom Typ „Back“ (am liebsten „Back + Spine“ = Einleger mit beiden Rücken).
+const SCAN = {}; // Index → Ergebnis (null = keins gefunden)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const https = (u) => String(u || '').replace(/^http:/, 'https:');
+let mbNext = 0;
+async function mbGet(path, tries = 4) { // MusicBrainz erlaubt 1 Anfrage pro Sekunde; bei „überlastet“ (503) nochmal
+  const wait = Math.max(0, mbNext - Date.now());
+  mbNext = Date.now() + wait + 1100;
+  await sleep(wait);
+  const r = await fetch(`https://musicbrainz.org/ws/2/${path}`, { headers: { Accept: 'application/json' } });
+  if ((r.status === 503 || r.status === 429) && tries > 1) { mbNext += 1500; return mbGet(path, tries - 1); }
+  if (!r.ok) throw new Error(`MusicBrainz ${r.status}`);
+  return r.json();
+}
+const COUNTRY = ['DE', 'XE', 'AT', 'CH', 'EU', 'GB', 'US'];
+const rank = (r) => { const k = COUNTRY.indexOf(r.country); return k < 0 ? 99 : k; };
+async function findScan(rgid) {
+  const key = `regal-scan-v2:${rgid}`;
+  try { const c = localStorage.getItem(key); if (c) return JSON.parse(c); } catch {}
+  const d = await mbGet(`release?release-group=${rgid}&fmt=json&limit=100&inc=media`);
+  const cds = (d.releases || []).filter((r) => r['cover-art-archive']?.back
+    && (r.media || []).some((m) => /CD$/.test(m.format || ''))).sort((a, b) => rank(a) - rank(b));
+  // Bilderlisten der besten Kandidaten gleichzeitig holen (das Cover Art Archive hat kein 1-pro-Sekunde-Limit)
+  const cand = cds.slice(0, 6);
+  const lists = await Promise.all(cand.map((r) => fetch(`https://coverartarchive.org/release/${r.id}`)
+    .then((x) => x.json()).catch(() => null)));
+  let best = null;
+  cand.forEach((r, k) => { // bei Gleichstand gewinnt die Ausgabe weiter vorne (DE vor EU vor GB vor US …)
+    for (const im of lists[k]?.images || []) {
+      if (!im.types.includes('Back')) continue;
+      const score = (im.types.includes('Spine') ? 2 : 0) + (im.approved ? 1 : 0);
+      if (!best || score > best.score) {
+        best = { score, spineTag: im.types.includes('Spine'), country: r.country || '', date: r.date || '',
+          small: https(im.thumbnails?.['500'] || im.thumbnails?.large || im.image),
+          big: im.thumbnails?.['1200'] ? https(im.thumbnails['1200']) : '' }; // nie die (oft riesige) Originaldatei
+      }
+    }
+  });
+  if (best) { // Seitenverhältnis messen: mit Rücken ≈ 151:118, nur Rückseite ≈ 138:118
+    const img = new Image();
+    img.src = best.small;
+    await img.decode();
+    best.ratio = img.naturalWidth / img.naturalHeight;
+  }
+  try { localStorage.setItem(key, JSON.stringify(best)); } catch {}
+  return best;
+}
+function applyScan(i, sc) {
+  const jc = els[i].firstElementChild;
+  const hasSpine = sc.ratio > 1.22;
+  const total = 118 * sc.ratio; // Breite in mm, wenn die Höhe 118 mm ist
+  const sp = hasSpine ? Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total)) : 0;
+  jc.style.setProperty('--scan', `url("${sc.small}")`);
+  // mit Rücken: Mitte passgenau herausschneiden; nur Rückseite: füllend zuschneiden statt verzerren
+  jc.style.setProperty('--bks', hasSpine ? `${(100 / (1 - 2 * sp)).toFixed(2)}% 100%` : 'cover');
+  if (hasSpine) jc.style.setProperty('--spw', `${(100 / sp).toFixed(1)}%`);
+  if (sc.big) jc.dataset.big = sc.big;
+  jc.classList.add('has-scan');
+  jc.classList.toggle('has-spine', hasSpine);
+}
+function showSrc() {
+  const cur = clampI(Math.round(pos)), sc = SCAN[cur];
+  const el = document.getElementById('src');
+  if (sc === undefined) el.textContent = 'Rückseite: wird gesucht …';
+  else if (!sc) el.textContent = 'Rückseite: kein Foto gefunden – selbst gebaut';
+  else {
+    const where = [sc.country, (sc.date || '').slice(0, 4)].filter(Boolean).join(' ');
+    el.textContent = `Rückseite: echtes Foto${where ? ` (CD ${where})` : ''} · Rücken: ${sc.ratio > 1.22 ? 'echt' : 'Cover-Streifen'}`;
+  }
+}
+function loadScans() { // alle gleichzeitig starten; die MusicBrainz-Warteschlange hält trotzdem 1 Anfrage/Sekunde ein
+  const order = ALBUMS.map((_, i) => i).sort((a, b) => Math.abs(a - pos) - Math.abs(b - pos));
+  for (const i of order) {
+    findScan(ALBUMS[i][2]).catch(() => null).then((sc) => {
+      SCAN[i] = sc;
+      if (sc) applyScan(i, sc);
+      showSrc();
+    });
+  }
+}
+
 seg('sk', (v) => document.documentElement.style.setProperty('--sk', v));
 seg('mode', (v) => {
   cancelAnimationFrame(raf);
@@ -461,6 +575,7 @@ seg('mode', (v) => {
   layout();
 });
 layout();
+loadScans();
 </script>
 </body>
 </html>

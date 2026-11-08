@@ -1,7 +1,7 @@
 {
-  "name": "Regal – CD- und DVD-Sammlung",
+  "name": "Regal – CD-Sammlung",
   "short_name": "Regal",
-  "description": "Deine CD- und DVD-Sammlung mit Fotoerkennung und Album-Checkliste",
+  "description": "Deine CD-Sammlung als Musik-App",
   "lang": "de",
   "start_url": "./",
   "scope": "./",

@@ -77,7 +77,7 @@ p { margin: 0; }
 #view {
   max-width: 760px;
   margin: 0 auto;
-  padding: 0 16px calc(var(--bar-bottom) + 110px);
+  padding: 0 16px calc(var(--safe-bottom) + 40px);
 }
 
 /* =========================================================
@@ -394,7 +394,7 @@ select option { background: var(--cell); color: var(--text); }
 }
 .badge.warn { background: rgba(255, 214, 10, 0.16); color: var(--warn); }
 .review-actions {
-  position: sticky; bottom: calc(var(--bar-bottom) + 76px); z-index: 5;
+  position: sticky; bottom: calc(var(--safe-bottom) + 10px); z-index: 5;
   padding: 14px 0 6px; margin-top: -6px;
 }
 .review-actions .btn { width: 100%; }
@@ -602,7 +602,7 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
    Meldungen und Ladekreisel
    ========================================================= */
 #toasts {
-  position: fixed; left: 16px; right: 16px; bottom: calc(var(--bar-bottom) + 78px); z-index: 60;
+  position: fixed; left: 16px; right: 16px; bottom: calc(var(--safe-bottom) + 24px); z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
 }
 .toast {
@@ -655,7 +655,9 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
    ========================================================= */
 .cf-stage {
   position: relative; margin: 0 -16px;
-  height: min(58vh, 520px);
+  height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 190px);
+  height: calc(100svh - var(--safe-top) - var(--safe-bottom) - 190px);
+  min-height: 300px; max-height: 640px;
   perspective: 820px; perspective-origin: 50% 40%;
   overflow: hidden; touch-action: none;
   -webkit-user-select: none; user-select: none;
@@ -664,7 +666,7 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
   position: absolute; left: 50%; top: 40%;
   width: var(--cf, 240px); height: var(--cf, 240px);
   margin: calc(var(--cf, 240px) / -2) 0 0 calc(var(--cf, 240px) / -2);
-  transform-style: preserve-3d; will-change: transform; cursor: pointer;
+  transform-style: preserve-3d; cursor: pointer;
 }
 .cf-card {
   position: absolute; inset: 0; transform-style: preserve-3d;
@@ -712,7 +714,6 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 .cf-info { text-align: center; margin-top: 4px; min-height: 48px; }
 .cf-title { font-size: 17px; font-weight: 600; letter-spacing: -0.43px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-sub { font-size: 15px; letter-spacing: -0.23px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cf-hint { text-align: center; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); margin-top: 10px; }
 /* Schieberegler wie bei iOS */
 .cf-scrub {
   -webkit-appearance: none; appearance: none; display: block;
@@ -725,6 +726,50 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
 }
 .cf-scrub::-moz-range-track { height: 4px; border-radius: 2px; background: var(--fill-3); }
 .cf-scrub::-moz-range-thumb { width: 26px; height: 26px; border: 0; border-radius: 50%; background: #fff; }
+
+/* =========================================================
+   Version 2: Musik-App wie der iPod – Listen und Startbildschirm
+   ========================================================= */
+/* Listenzeilen (Interpreten, Alben) */
+.lrow {
+  --sep-left: 60px;
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 8px 0; text-align: left; color: var(--text);
+}
+.lrow:active { opacity: 0.6; }
+.lrow .cover.thumb { width: 48px; }
+.lrow .row-title { font-size: 17px; }
+.lrow.missing .cover { filter: grayscale(1) brightness(0.8); opacity: 0.55; box-shadow: none; }
+.lrow.missing .row-title { color: var(--muted); }
+.lrow-hit { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; color: inherit; }
+.heart-btn {
+  width: 40px; height: 40px; flex: none; margin-right: -6px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: var(--faint);
+}
+.heart-btn.on { color: var(--text); }
+.heart-btn.on svg { fill: currentColor; }
+.list-search { margin-bottom: 14px; }
+.list-search input { padding: 10px 0; }
+
+/* Gruppen in Blättern (z. B. Album-Blatt) */
+.sheet-group { margin-top: 18px; text-align: left; background: rgba(255, 255, 255, 0.07); }
+.sheet .group + .group, .sheet-group + .tiny { margin-top: 14px; }
+
+/* Startbildschirm: nur das Blättern, keine Leiste */
+body.flow-page #view { padding-bottom: calc(var(--safe-bottom) + 12px); }
+body.flow-page { overscroll-behavior: none; }
+.flow-empty { padding-top: 18vh; }
+.cf-item.missing .cf-cover { filter: grayscale(1) brightness(0.75); opacity: 0.55; }
+.cf-info { margin-top: 0; }
+.cf-title { font-size: 20px; font-weight: 600; letter-spacing: -0.45px; }
+.cf-round {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--fill-2); color: var(--text);
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.3);
+}
+.cf-round.on svg { fill: currentColor; }
+.cf-back-head { gap: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }

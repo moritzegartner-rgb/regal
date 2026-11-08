@@ -4,21 +4,19 @@ import { blobToBase64 } from './util.js';
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
-const PROMPT = `You are looking at a photo of a shelf, stack or box with music CDs and/or DVDs (including Blu-rays and TV series box sets).
-Find EVERY case whose spine or front is visible - left to right, top to bottom.
+const PROMPT = `You are looking at a photo of a shelf, stack or box with music CDs.
+Find EVERY music CD case whose spine or front is visible - left to right, top to bottom.
 Spines are often rotated 90 degrees and printed small: read them carefully.
+Ignore everything that is not a music CD (DVDs, Blu-rays, games, books, vinyl).
 
-For each case return:
-- "type": "cd" for music CDs, "dvd" for DVDs, Blu-rays and other film/series discs
-- "artist": for CDs the performer/band ("Various Artists" for compilations of many artists), for DVDs ""
-- "title": album title or film/series title as printed on the case (keep the printed language, no extras like "CD" or "Deluxe Edition", no season numbers)
-- "seasons": for TV series the season numbers contained, e.g. [2] or [1,2,3]; otherwise []
-- "complete": true if it is a box with the complete series, otherwise false
+For each CD return:
+- "artist": the performer/band ("Various Artists" for compilations of many artists)
+- "title": the album title as printed on the case (keep the printed language, no extras like "CD" or "Deluxe Edition")
 - "confidence": "high" if clearly readable, "low" if only partly readable or guessed
 
 Do not invent anything. Skip cases you cannot read. List each physical case only once.
 Answer ONLY with JSON in exactly this form:
-{"items":[{"type":"cd","artist":"Green Day","title":"Dookie","seasons":[],"complete":false,"confidence":"high"}]}`;
+{"items":[{"artist":"Green Day","title":"Dookie","confidence":"high"}]}`;
 
 // Fehlermeldungen von Google in verständliches Deutsch übersetzen
 function explain(status, data) {
@@ -73,18 +71,13 @@ function parseItems(json) {
   }
   const arr = Array.isArray(parsed) ? parsed : (parsed.items || []);
   return arr
-    .filter((x) => x && typeof x.title === 'string' && x.title.trim())
-    .map((x) => {
-      const type = x.type === 'dvd' || x.type === 'cd' ? x.type : (x.artist ? 'cd' : 'dvd');
-      return {
-        type,
-        artist: type === 'cd' ? String(x.artist || '').trim() : '',
-        title: x.title.trim(),
-        seasons: Array.isArray(x.seasons) ? x.seasons.map(Number).filter((n) => n > 0) : [],
-        complete: !!x.complete,
-        confidence: x.confidence === 'low' ? 'low' : 'high',
-      };
-    });
+    .filter((x) => x && typeof x.title === 'string' && x.title.trim() && x.type !== 'dvd')
+    .map((x) => ({
+      type: 'cd',
+      artist: String(x.artist || '').trim(),
+      title: x.title.trim(),
+      confidence: x.confidence === 'low' ? 'low' : 'high',
+    }));
 }
 
 // Foto an Gemini schicken und erkannte Hüllen zurückgeben

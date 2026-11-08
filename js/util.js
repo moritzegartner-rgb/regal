@@ -62,6 +62,10 @@ const ICONS = {
   key: '<circle cx="8" cy="15" r="4"/><path d="M10.85 12.15l9.15 -9.15M18 5l2 2M15 8l2 2"/>',
   eye: '<path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/>',
   play: '<path d="M7 4v16l13 -8z" fill="currentColor"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/>',
+  more: '<circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11M5 6v.01M5 12v.01M5 18v.01"/>',
   flow: '<rect x="8" y="5" width="8" height="14" rx="1"/><path d="M5 7l-2 1v8l2 1M19 7l2 1v8l-2 1"/>',
 };
 

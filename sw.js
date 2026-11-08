@@ -1,5 +1,5 @@
 // Service Worker: App funktioniert auch ohne Netz, Cover werden zwischengespeichert
-const VERSION = 'regal-v6';
+const VERSION = 'regal-v7';
 const COVERS = 'regal-covers';
 const SHELL = [
   './',
@@ -10,9 +10,6 @@ const SHELL = [
   './js/util.js',
   './js/gemini.js',
   './js/musicbrainz.js',
-  './js/tmdb.js',
-  './js/video.js',
-  './js/wikidata.js',
   './manifest.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',
@@ -53,7 +50,7 @@ self.addEventListener('fetch', (e) => {
   }
 
   // Cover und Poster: einmal laden, dann aus dem Speicher
-  if (/(^|\.)coverartarchive\.org$|(^|\.)archive\.org$|^image\.tmdb\.org$|^(upload|thumb)\.wikimedia\.org$/.test(url.hostname)) {
+  if (/(^|\.)coverartarchive\.org$|(^|\.)archive\.org$/.test(url.hostname)) {
     e.respondWith(
       caches.open(COVERS).then(async (c) => {
         const hit = await c.match(req.url);

@@ -1,39 +1,35 @@
-// Regal – deine CD- und DVD-Sammlung
+// Regal – deine CD-Sammlung als Musik-App
+// Start: Interpreten durchblättern wie früher auf dem iPod. Sammeln (Scannen, Lücken, Wünsche) im Menü.
 // Alles läuft im Browser auf dem iPhone, die Daten bleiben in der App (IndexedDB).
 import { db, getSetting, setSetting, getCache, setCache } from './db.js';
 import * as mb from './musicbrainz.js';
-import * as tmdb from './tmdb.js';
-import * as video from './video.js';
 import * as gemini from './gemini.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '1.5';
+const APP_VERSION = '2.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
 const today = () => new Date().toISOString().slice(0, 10);
+const enc = encodeURIComponent;
 
 const state = {
-  items: [],
+  items: [], // nur CDs
   wishes: [],
   version: 0,
   geminiKey: '',
-  tmdbKey: '',
   includeLive: false,
-  libTab: 'cd',
-  sortBy: { cd: 'artist', dvd: 'title' },
-  search: '',
-  gapTab: 'cd',
   gapFilter: 'all',
   albumFilter: 'all',
-  current: null, // Daten der gerade offenen Detailseite (Interpret, Filmreihe, Serie)
+  listQ: {}, // Suchtext je Liste
+  current: null, // Daten der gerade offenen Interpretenseite
   scan: { rows: [], busy: false, matching: false, status: '' },
 };
 
 const view = () => $('#view');
 
 // =====================================================================
-// Schneller Zugriff: wer/was ist schon in der Sammlung?
+// Schneller Zugriff: was ist schon in der Sammlung?
 // =====================================================================
 let indexCache = { version: -1 };
 
@@ -42,21 +38,12 @@ function getIndex() {
   const byMbid = new Map();
   const byArtistTitle = new Map();
   const byKey = new Map();
-  const byVid = new Map();
   for (const it of state.items) {
-    if (it.type === 'cd') {
-      if (it.mbid) byMbid.set(it.mbid, it);
-      if (it.artistMbid) byArtistTitle.set(`${it.artistMbid}|${norm(it.title)}`, it);
-      byKey.set(`cd|${norm(it.artist)}|${norm(it.title)}`, it);
-    } else {
-      byKey.set(`dvd|${norm(it.title)}`, it);
-      if (it.vid) {
-        if (!byVid.has(it.vid)) byVid.set(it.vid, []);
-        byVid.get(it.vid).push(it);
-      }
-    }
+    if (it.mbid) byMbid.set(it.mbid, it);
+    if (it.artistMbid) byArtistTitle.set(`${it.artistMbid}|${norm(it.title)}`, it);
+    byKey.set(`${norm(it.artist)}|${norm(it.title)}`, it);
   }
-  indexCache = { version: state.version, byMbid, byArtistTitle, byKey, byVid };
+  indexCache = { version: state.version, byMbid, byArtistTitle, byKey };
   return indexCache;
 }
 
@@ -64,52 +51,28 @@ const changed = () => { state.version++; };
 
 function isDuplicate(m) {
   const idx = getIndex();
-  if (m.type === 'cd') {
-    if (m.mbid && idx.byMbid.has(m.mbid)) return true;
-    return idx.byKey.has(`cd|${norm(m.artist)}|${norm(m.title)}`);
-  }
-  if (m.vid) {
-    const owned = idx.byVid.get(m.vid) || [];
-    if (!owned.length) return false;
-    if (m.kind !== 'tv') return true;
-    const have = new Set(owned.flatMap((i) => i.seasons || []));
-    const want = m.seasons || [];
-    return want.length ? want.every((s) => have.has(s)) : true;
-  }
-  return idx.byKey.has(`dvd|${norm(m.title)}`);
+  if (m.mbid && idx.byMbid.has(m.mbid)) return true;
+  return idx.byKey.has(`${norm(m.artist)}|${norm(m.title)}`);
 }
 
 // =====================================================================
 // Sammlung speichern
 // =====================================================================
 function itemFromMatch(m, source) {
-  const it = {
+  return {
     id: uid(),
     addedAt: Date.now(),
     source,
-    type: m.type,
+    type: 'cd',
+    kind: 'album',
     title: m.title || '',
-    artist: m.type === 'cd' ? (m.artist || '') : '',
+    artist: m.artist || '',
     year: m.year || '',
     cover: m.cover || '',
+    mbid: m.mbid || null,
+    artistMbid: m.artistMbid || null,
+    artistName: m.artistName || m.artist || '',
   };
-  if (m.type === 'cd') {
-    Object.assign(it, {
-      kind: 'album',
-      mbid: m.mbid || null,
-      artistMbid: m.artistMbid || null,
-      artistName: m.artistName || m.artist || '',
-    });
-  } else {
-    Object.assign(it, {
-      kind: m.kind || 'movie',
-      vid: m.vid || null,
-      collectionId: m.collectionId || null,
-      collectionName: m.collectionName || '',
-      seasons: m.seasons || [],
-    });
-  }
-  return it;
 }
 
 async function addItems(items) {
@@ -133,28 +96,10 @@ async function deleteItem(id) {
   await db.del('items', id);
 }
 
-// Filme: gehört er zu einer Reihe? Serien-Box „komplett“: alle Staffeln eintragen
-async function enrichVideo(m, { complete = false } = {}) {
-  if (m.type !== 'dvd' || !m.vid) return m;
-  try {
-    await video.enrich(m);
-    if (m.kind === 'tv' && complete) {
-      const tv = await cachedTv(m.vid);
-      m.seasons = tv.seasons.map((s) => s.number);
-    }
-  } catch { /* ohne Zusatzinfos speichern */ }
-  return m;
-}
-
 // =====================================================================
 // Wunschliste
 // =====================================================================
-function wishId(o) {
-  if (o.type === 'cd') return `mb:${o.mbid}`;
-  if (o.kind === 'tv') return `tv:${o.vid}:${o.season}`;
-  return `movie:${o.vid}`;
-}
-
+const wishId = (o) => `mb:${o.mbid}`;
 const isWished = (id) => state.wishes.some((w) => w.id === id);
 
 async function toggleWish(w) {
@@ -168,67 +113,29 @@ async function toggleWish(w) {
     await db.put('wishes', w);
     toast('Auf der Wunschliste');
   }
-  updateTabBadges();
 }
 
 async function removeWish(id) {
   state.wishes = state.wishes.filter((x) => x.id !== id);
   await db.del('wishes', id);
-  updateTabBadges();
 }
 
 async function removeWishFor(item) {
-  const ids = [];
-  if (item.type === 'cd' && item.mbid) ids.push(`mb:${item.mbid}`);
-  if (item.kind === 'movie' && item.vid) ids.push(`movie:${item.vid}`);
-  if (item.kind === 'tv' && item.vid) (item.seasons || []).forEach((s) => ids.push(`tv:${item.vid}:${s}`));
-  for (const id of ids) if (isWished(id)) await removeWish(id);
+  if (item.mbid && isWished(`mb:${item.mbid}`)) await removeWish(`mb:${item.mbid}`);
 }
 
 // =====================================================================
 // Bausteine für die Darstellung
 // =====================================================================
 function coverHtml(o, cls = '', extra = '') {
-  return `<div class="cover ${o.type === 'dvd' ? 'poster' : ''} ${cls}" style="--h:${hue((o.title || '') + (o.artist || ''))}">
+  return `<div class="cover ${cls}" style="--h:${hue((o.title || '') + (o.artist || ''))}">
     <span class="ph">${esc(o.title || '?')}</span>
     ${o.cover ? `<img src="${esc(o.cover)}" loading="lazy" alt="">` : ''}
     ${extra}
   </div>`;
 }
 
-const bigCover = (url) => String(url || '').replace('/front-250', '/front-500').replace('/w342/', '/w500/');
-
-function compactRange(nums) {
-  const s = [...new Set(nums)].sort((a, b) => a - b);
-  const out = [];
-  for (let i = 0; i < s.length; i++) {
-    let j = i;
-    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
-    out.push(j > i + 1 ? `${s[i]}–${s[j]}` : (j === i + 1 ? `${s[i]}, ${s[j]}` : `${s[i]}`));
-    i = j;
-  }
-  return out.join(', ');
-}
-
-function seasonsLabel(o) {
-  const s = o.seasons || [];
-  if (!s.length) return '';
-  return (s.length === 1 ? 'Staffel ' : 'Staffeln ') + compactRange(s);
-}
-
-function parseSeasons(str) {
-  const out = [];
-  String(str || '').replace(/(\d+)\s*[-–]\s*(\d+)|(\d+)/g, (_, a, b, c) => {
-    if (c) out.push(+c);
-    else for (let n = +a; n <= +b && n - a < 50; n++) out.push(n);
-    return '';
-  });
-  return [...new Set(out.filter((n) => n > 0))].sort((a, b) => a - b);
-}
-
-function videoLabel(o) {
-  return [o.kind === 'tv' ? 'Serie' : 'Film', o.year, seasonsLabel(o)].filter(Boolean).join(' · ');
-}
+const bigCover = (url) => String(url || '').replace('/front-250', '/front-500');
 
 function albumTypeLabel(r) {
   if (r.primaryType === 'Single') return 'Single';
@@ -241,48 +148,24 @@ function albumTypeLabel(r) {
   return r.primaryType === 'Album' ? 'Album' : (r.primaryType || '');
 }
 
-function cardHtml(it) {
-  const sub = it.type === 'cd' ? it.artist : videoLabel(it);
-  return `<button class="card" data-action="item" data-id="${it.id}">
-    ${coverHtml(it)}
-    <span class="card-title">${esc(it.title)}</span>
-    <span class="card-sub">${esc(sub)}</span>
-  </button>`;
-}
+const albumsLabel = (n) => (n === 1 ? '1 Album' : `${n} Alben`);
+const chev = () => icon('chevron', 16, 'cell-chev');
 
-// Kopfzeile wie in iOS 26: schwebende Glas-Knöpfe oben, großer Titel darunter,
-// beim Scrollen erscheint ein kleiner Titel in der Mitte
-function header(title, { back = false, actions = '', compact = false } = {}) {
+// Kopfzeile wie in iOS: schwebende Glas-Knöpfe oben, großer Titel darunter
+function header(title, { back = false, left = '', actions = '', compact = false } = {}) {
+  const leftHtml = back
+    ? `<button class="glass-btn round" data-action="back" aria-label="Zurück">${icon('back', 24)}</button>`
+    : left;
   return `<div class="navbar ${compact ? 'compact' : ''}">
-    <div class="nav-side">${back ? `<button class="glass-btn round" data-action="back" aria-label="Zurück">${icon('back', 24)}</button>` : ''}</div>
+    <div class="nav-side">${leftHtml}</div>
     <div class="nav-title">${esc(title)}</div>
-    <div class="nav-side right">${actions ? `<div class="glass-group">${actions}</div>` : ''}</div>
+    <div class="nav-side right">${actions}</div>
   </div>
   ${compact ? '' : `<h1 class="large-title">${esc(title)}</h1>`}`;
 }
 
 function setTitle(text) {
   document.querySelectorAll('.nav-title, .large-title').forEach((el) => { el.textContent = text; });
-}
-
-// Umschalter mit gleitendem Glas-Knopf (merkt sich die alte Position für die Animation)
-const segMem = {};
-
-function segHtml(id, action, options, active) {
-  const i = Math.max(0, options.findIndex(([v]) => v === active));
-  const from = segMem[id] ?? i;
-  return `<div class="seg" data-seg="${id}" data-to="${i}" style="--n:${options.length};--i:${from}">
-    ${options.map(([v, label]) => `<button data-action="${action}" data-tab="${v}" class="${v === active ? 'on' : ''}">${label}</button>`).join('')}
-  </div>`;
-}
-
-function animateSegs() {
-  document.querySelectorAll('.seg[data-seg]').forEach((el) => {
-    const to = Number(el.dataset.to);
-    void el.offsetWidth; // alte Position erst zeichnen, dann gleiten
-    el.style.setProperty('--i', to);
-    segMem[el.dataset.seg] = to;
-  });
 }
 
 function progressHtml(owned, total, label) {
@@ -292,212 +175,20 @@ function progressHtml(owned, total, label) {
     <div class="bar big ${done ? 'done' : ''}"><i style="width:${pct}%"></i></div>`;
 }
 
-// =====================================================================
-// Navigation
-// =====================================================================
-let lastPage = '';
-
-function route() {
-  return (location.hash.replace(/^#\/?/, '') || 'sammlung').split('/').map(decodeURIComponent);
+function searchHtml(id, placeholder) {
+  return `<label class="search list-search">${icon('search', 18)}<input id="${id}" type="search" placeholder="${placeholder}" value="${esc(state.listQ[id] || '')}" autocomplete="off"></label>`;
 }
 
-function render() {
-  closeSheet();
-  state.current = null;
-  const r = route();
-  const key = r.join('/');
-  if (key !== lastPage) { window.scrollTo(0, 0); lastPage = key; }
-  setActiveTab(r[0]);
-  const [page, sub, id] = r;
-  if (page === 'sammlung' || page === 'luecken') {
-    if (sub === 'artist') renderArtist(id);
-    else if (sub === 'gruppe') renderNameGroup(id);
-    else if (sub === 'reihe') renderCollection(id);
-    else if (sub === 'serie') renderSeries(id);
-    else if (sub === 'blaettern') renderCoverFlow();
-    else if (page === 'sammlung') renderLibrary();
-    else renderGaps();
-  } else if (page === 'scan') renderScan();
-  else if (page === 'wuensche') renderWishes();
-  else if (page === 'einstellungen') renderSettings();
-  else location.replace('#/sammlung');
-}
-
-// Schwebende Tab-Leiste wie in iOS 26: Glas-Kapsel mit gleitendem Glas-Tropfen
-// und daneben ein runder Kamera-Knopf (wie der Such-Knopf bei Apple)
-const TABS = [['sammlung', 'grid', 'Sammlung'], ['luecken', 'checklist', 'Lücken'], ['wuensche', 'heart', 'Wünsche']];
-
-function renderTabbar() {
-  $('#tabbar').innerHTML = `
-    <div class="tab-pill glass" style="--ti:0">
-      <span class="tab-indicator"></span>
-      ${TABS.map(([id, ic, label]) => `<a href="#/${id}" data-tab="${id}">
-        <span class="tab-ic">${icon(ic, 24)}<i class="dot" hidden></i></span><span>${label}</span>
-      </a>`).join('')}
-    </div>
-    <a class="tab-fab glass" href="#/scan" data-tab="scan" aria-label="Regal scannen">
-      <span class="tab-ic">${icon('camera', 27)}<i class="dot" hidden></i></span>
-    </a>`;
-}
-
-function setActiveTab(page) {
-  const p = page === 'einstellungen' ? 'sammlung' : page;
-  const idx = TABS.findIndex(([id]) => id === p);
-  const pill = $('#tabbar .tab-pill');
-  if (idx >= 0) pill.style.setProperty('--ti', idx);
-  pill.classList.toggle('none', idx < 0);
-  document.querySelectorAll('#tabbar [data-tab]').forEach((a) => a.classList.toggle('on', a.dataset.tab === p));
-}
-
-function updateTabBadges() {
-  const scanDot = $('#tabbar [data-tab="scan"] .dot');
-  if (scanDot) scanDot.hidden = !state.scan.rows.length;
-  const wishDot = $('#tabbar [data-tab="wuensche"] .dot');
-  if (wishDot) {
-    wishDot.hidden = !state.wishes.length;
-    wishDot.textContent = state.wishes.length > 99 ? '99+' : String(state.wishes.length || '');
-    wishDot.classList.add('count');
-  }
+function bindSearch(id, fill) {
+  $(`#${id}`)?.addEventListener('input', (e) => { state.listQ[id] = e.target.value; fill(); });
 }
 
 // =====================================================================
-// 1) Sammlung
+// Interpreten (Gruppen aus der Sammlung)
 // =====================================================================
-function renderLibrary() {
-  const cds = state.items.filter((i) => i.type === 'cd').length;
-  const dvds = state.items.length - cds;
-  const isCd = state.libTab === 'cd';
-  const sorts = isCd
-    ? [['artist', 'Name'], ['count', 'Anzahl'], ['added', 'Neueste']]
-    : [['title', 'Titel'], ['year', 'Jahr'], ['added', 'Neueste']];
-  const curSort = state.sortBy[state.libTab];
-  view().innerHTML = `
-    ${header('Deine Sammlung', {
-    actions: `<a class="icon-btn" href="#/sammlung/blaettern" aria-label="Alben durchblättern">${icon('flow', 24)}</a>
-      <button class="icon-btn" data-action="add" aria-label="Von Hand hinzufügen">${icon('plus', 24)}</button>
-      <a class="icon-btn" href="#/einstellungen" aria-label="Einstellungen">${icon('settings', 22)}</a>`,
-  })}
-    ${segHtml('lib', 'lib-tab', [['cd', `CDs <b>${cds}</b>`], ['dvd', `DVDs <b>${dvds}</b>`]], state.libTab)}
-    <div class="toolbar">
-      <label class="search">${icon('search', 18)}<input id="lib-q" type="search" placeholder="${isCd ? 'Interpret oder Album' : 'Film oder Serie'}" value="${esc(state.search)}" autocomplete="off"></label>
-      <select id="lib-sort" aria-label="Sortierung">
-        ${sorts.map(([v, l]) => `<option value="${v}" ${curSort === v ? 'selected' : ''}>${l}</option>`).join('')}
-      </select>
-    </div>
-    <div id="lib-grid"></div>`;
-  $('#lib-q').addEventListener('input', (e) => { state.search = e.target.value; fillLibrary(); });
-  $('#lib-sort').addEventListener('change', (e) => {
-    state.sortBy[state.libTab] = e.target.value;
-    setSetting('sortBy', state.sortBy);
-    fillLibrary();
-  });
-  animateSegs();
-  fillLibrary();
-}
-
-function fillLibrary() {
-  const box = $('#lib-grid');
-  if (!box) return;
-  const all = state.items.filter((i) => i.type === state.libTab);
-  if (!all.length) { box.innerHTML = emptyLibrary(); return; }
-  if (state.libTab === 'cd') fillArtistGrid(box);
-  else fillVideoGrid(box);
-}
-
-// ---------- DVDs: Filmreihen und Serien zusammengefasst, Einzelfilme einzeln ----------
-function videoGroups() {
-  const map = new Map();
-  const out = [];
-  for (const it of state.items) {
-    if (it.type !== 'dvd') continue;
-    let key = null;
-    if (it.kind === 'movie' && it.collectionId) key = `col:${it.collectionId}`;
-    else if (it.kind === 'tv' && it.vid) key = `tv:${it.vid}`;
-    if (!key) { out.push({ kind: 'single', key: it.id, name: it.title, items: [it] }); continue; }
-    if (!map.has(key)) {
-      const g = {
-        kind: it.kind === 'tv' ? 'tv' : 'col',
-        key,
-        id: it.kind === 'tv' ? it.vid : it.collectionId,
-        name: it.kind === 'tv' ? it.title : (it.collectionName || it.title),
-        items: [],
-      };
-      map.set(key, g);
-      out.push(g);
-    }
-    map.get(key).items.push(it);
-  }
-  for (const g of out) {
-    const data = g.kind !== 'single' && videoMem.get(g.key);
-    if (data?.name) g.name = data.name;
-  }
-  return out;
-}
-
-function videoGroupInfo(g) {
-  const sorted = g.items.slice().sort(byYear);
-  let cover = (sorted.find((i) => i.cover) || sorted[0]).cover;
-  let sub = '';
-  const data = videoMem.get(g.key);
-  if (g.kind === 'col') {
-    const parts = data ? released(data.parts).sort((a, b) => a.date.localeCompare(b.date)) : [];
-    if (parts.length) {
-      if (parts[0].cover) cover = parts[0].cover; // erster Teil der Reihe als Bild
-      const idx = getIndex();
-      sub = `${parts.filter((p) => idx.byVid.has(p.vid)).length} von ${parts.length} Filmen`;
-    } else sub = g.items.length === 1 ? '1 Film' : `${g.items.length} Filme`;
-  } else {
-    const have = new Set(g.items.flatMap((i) => i.seasons || []));
-    const seasons = data ? data.seasons.filter((s) => !s.date || s.date <= today()) : [];
-    if (seasons.length) {
-      sub = `${seasons.filter((s) => have.has(s.number)).length} von ${seasons.length} Staffeln`;
-      cover = cover || data.cover;
-    } else sub = seasonsLabel({ seasons: [...have] }) || 'Serie';
-  }
-  return { cover, sub };
-}
-
-function videoCardHtml(g) {
-  if (g.kind === 'single') return cardHtml(g.items[0]);
-  const { cover, sub } = videoGroupInfo(g);
-  const href = `#/sammlung/${g.kind === 'col' ? 'reihe' : 'serie'}/${encodeURIComponent(g.id)}`;
-  return `<a class="card" href="${href}">
-    ${coverHtml({ type: 'dvd', title: g.name, cover }, 'stack', `<span class="kind-tag">${g.kind === 'col' ? 'Reihe' : 'Serie'}</span>`)}
-    <span class="card-title">${esc(g.name)}</span>
-    <span class="card-sub">${esc(sub)}</span>
-  </a>`;
-}
-
-function fillVideoGrid(box) {
-  const qn = norm(state.search);
-  let groups = videoGroups();
-  const counts = { col: 0, tv: 0, single: 0 };
-  groups.forEach((g) => { counts[g.kind]++; });
-  if (qn) groups = groups.filter((g) => norm(g.name).includes(qn) || g.items.some((i) => norm(i.title).includes(qn)));
-  const s = state.sortBy.dvd;
-  const first = (g) => g.items.map((i) => i.year || '9999').sort()[0];
-  const newest = (g) => Math.max(...g.items.map((i) => i.addedAt));
-  groups.sort((a, b) => {
-    if (s === 'added') return newest(b) - newest(a);
-    if (s === 'year') return first(a).localeCompare(first(b)) || collator.compare(sortName(a.name), sortName(b.name));
-    return collator.compare(sortName(a.name), sortName(b.name));
-  });
-  const dvds = state.items.filter((i) => i.type === 'dvd').length;
-  const parts = [dvds === 1 ? '1 DVD' : `${dvds} DVDs`];
-  if (counts.col) parts.push(counts.col === 1 ? '1 Filmreihe' : `${counts.col} Filmreihen`);
-  if (counts.tv) parts.push(counts.tv === 1 ? '1 Serie' : `${counts.tv} Serien`);
-  box.innerHTML = groups.length
-    ? `<p class="muted small lib-count">${parts.join(' · ')}</p>
-       <div class="grid dvd">${groups.map(videoCardHtml).join('')}</div>`
-    : `<p class="empty-small">Nichts gefunden für „${esc(state.search)}“.</p>`;
-  if (groups.some((g) => g.kind !== 'single' && !videoMem.has(g.key) && !videoTried.has(g.key))) preloadVideos();
-}
-
-// ---------- CDs: nach Interpret gruppiert ----------
 function libraryGroups() {
   const map = new Map();
   for (const it of state.items) {
-    if (it.type !== 'cd') continue;
     const various = it.artistMbid === mb.VARIOUS_ARTISTS || /^(various artists|various|verschiedene( interpreten)?)$/i.test((it.artist || '').trim());
     let key = 'various';
     if (!various) key = it.artistMbid ? `mb:${it.artistMbid}` : `name:${norm(it.artist) || 'unbekannt'}`;
@@ -512,107 +203,488 @@ function libraryGroups() {
     }
     map.get(key).items.push(it);
   }
-  return [...map.values()];
+  return [...map.values()].sort((a, b) => (a.various - b.various) || collator.compare(sortName(a.name), sortName(b.name)));
 }
 
-const groupHref = (g) => (g.mbid ? `#/sammlung/artist/${g.mbid}` : `#/sammlung/gruppe/${encodeURIComponent(g.key)}`);
 const byYear = (a, b) => (a.year || '9999').localeCompare(b.year || '9999') || collator.compare(a.title, b.title);
 
-function artistCardHtml(g) {
+function groupCover(g) {
   const sorted = g.items.slice().sort(byYear);
-  const withCover = sorted.filter((i) => i.cover);
-  const art = withCover.length >= 4
-    ? `<div class="cover mosaic" style="--h:${hue(g.name)}">${withCover.slice(0, 4).map((i) => `<img src="${esc(i.cover)}" loading="lazy" alt="">`).join('')}</div>`
-    : coverHtml({ type: 'cd', title: g.name, artist: '', cover: (withCover[0] || sorted[0]).cover });
-  let sub = g.items.length === 1 ? '1 CD' : `${g.items.length} CDs`;
+  return (sorted.find((i) => i.cover) || sorted[0])?.cover || '';
+}
+
+function groupSub(g) {
   const disco = g.mbid && discoMem.get(g.mbid)?.data;
   if (disco) {
     const p = discoProgress(g.mbid, disco);
-    if (p.total) sub = `${p.owned} von ${p.total} Alben`;
+    if (p.total) return `${p.owned} von ${p.total} Alben`;
   }
-  return `<a class="card" href="${groupHref(g)}">
-    ${art}
-    <span class="card-title">${esc(g.name)}</span>
-    <span class="card-sub">${esc(sub)}</span>
-  </a>`;
+  return albumsLabel(g.items.length);
 }
 
-function fillArtistGrid(box) {
-  const qn = norm(state.search);
-  let groups = libraryGroups();
-  const total = groups.length;
-  if (qn) groups = groups.filter((g) => norm(g.name).includes(qn) || g.items.some((i) => norm(i.title).includes(qn)));
-  const s = state.sortBy.cd;
-  const newest = (g) => Math.max(...g.items.map((i) => i.addedAt));
-  groups.sort((a, b) => {
-    if (s === 'count') return b.items.length - a.items.length || collator.compare(sortName(a.name), sortName(b.name));
-    if (s === 'added') return newest(b) - newest(a);
-    if (a.various !== b.various) return a.various ? 1 : -1; // Sampler ans Ende
-    return collator.compare(sortName(a.name), sortName(b.name));
+// =====================================================================
+// Navigation
+// =====================================================================
+let lastPage = '';
+
+function route() {
+  const h = location.hash.replace(/^#\/?/, '');
+  return h ? h.split('/').map(decodeURIComponent) : [''];
+}
+
+function render() {
+  closeSheet();
+  state.current = null;
+  const r = route();
+  const key = r.join('/');
+  if (key !== lastPage) { window.scrollTo(0, 0); lastPage = key; }
+  const [page, id] = r;
+  document.body.classList.toggle('flow-page', page === '' || page === 'flow');
+  if (page === '') renderFlow('artists');
+  else if (page === 'flow') renderFlow('albums', id);
+  else if (page === 'menu') renderMenu();
+  else if (page === 'interpreten') { if (id) renderArtistPage(id); else renderArtistList(); }
+  else if (page === 'alben') renderAlbumList();
+  else if (page === 'luecken') renderGaps();
+  else if (page === 'wuensche') renderWishes();
+  else if (page === 'scan') renderScan();
+  else if (page === 'einstellungen') renderSettings();
+  else location.replace('#/');
+}
+
+// =====================================================================
+// 1) Durchblättern – Startbildschirm (Interpreten) und Alben eines Interpreten
+// =====================================================================
+const CF = {
+  level: 'artists', key: '', entries: [], els: [], pos: 0, target: 0, size: 240,
+  raf: 0, flipped: -1, shown: -1, fast: false, fastTimer: 0, settleTimer: 0, mem: {},
+};
+const CF_WINDOW = 6; // so viele Cover links und rechts werden gezeichnet
+
+function artistEntries() {
+  return libraryGroups().map((g) => ({ key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), group: g }));
+}
+
+function albumEntries(g) {
+  const list = g.items.map((it) => ({ key: it.mbid || it.id, title: it.title, sub: it.year || '', cover: it.cover, item: it, sortYear: it.year || '9999' }));
+  const disco = g.mbid && discoMem.get(g.mbid)?.data;
+  if (disco) {
+    for (const a of studioAlbums(disco)) {
+      if (ownedAlbum(a, g.mbid)) continue;
+      list.push({ key: a.mbid, title: a.title, sub: a.year ? `${a.year} · fehlt dir noch` : 'fehlt dir noch', cover: a.cover, missing: true, album: a, sortYear: a.date || '9999' });
+    }
+  }
+  return list.sort((a, b) => a.sortYear.localeCompare(b.sortYear) || collator.compare(a.title, b.title));
+}
+
+function renderFlow(level, key = '') {
+  const g = level === 'albums' ? libraryGroups().find((x) => x.key === key) : null;
+  if (level === 'albums' && !g) { location.replace('#/'); return; }
+  const entries = level === 'artists' ? artistEntries() : albumEntries(g);
+  Object.assign(CF, { level, key, entries, flipped: -1, shown: -1, fast: false });
+  if (g) state.current = { kind: 'flow', g };
+
+  const nav = level === 'artists'
+    ? header('', {
+      compact: true,
+      left: `<a class="glass-btn round" href="#/menu" aria-label="Menü">${icon('menu', 22)}</a>`,
+      actions: `<button class="glass-btn round" data-action="add-menu" aria-label="CDs hinzufügen">${icon('plus', 24)}</button>`,
+    })
+    : header(g.name, {
+      back: true,
+      compact: true,
+      actions: `<a class="glass-btn round" href="#/interpreten/${enc(g.key)}" aria-label="Als Liste">${icon('list', 22)}</a>`,
+    });
+
+  if (!entries.length) {
+    view().innerHTML = `${nav}<div class="empty flow-empty">${icon('disc', 46)}
+      <h2>Noch keine CDs</h2>
+      <p>Fotografiere dein Regal – die App erkennt die CDs und legt sie hier ab.</p>
+      <a class="btn primary" href="#/scan">${icon('camera', 20)} Regal fotografieren</a>
+      <button class="btn ghost" data-action="add">${icon('search', 20)} CD suchen und hinzufügen</button></div>`;
+    return;
+  }
+
+  view().innerHTML = `${nav}
+    <div class="cf-stage" id="cf-stage">
+      ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
+        <div class="cf-card">
+          <div class="cf-front"><div class="cover cf-cover" style="--h:${hue(e.title)}">
+            <span class="ph">${esc(e.title)}</span>${e.cover ? `<img data-src="${esc(e.cover)}" alt="" draggable="false">` : ''}
+          </div></div>
+          ${level === 'albums' ? '<div class="cf-back"></div>' : ''}
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="cf-info"><div class="cf-title"></div><div class="cf-sub"></div></div>
+    ${entries.length > 1 ? `<input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${entries.length - 1}" step="1" value="0" aria-label="Schnell blättern">` : ''}`;
+  CF.els = [...document.querySelectorAll('.cf-item')];
+  // dort weitermachen, wo man zuletzt war
+  const memKey = `${level}:${key}`;
+  const start = Math.max(0, entries.findIndex((e) => e.key === CF.mem[memKey]));
+  CF.pos = start;
+  CF.target = start;
+  cfBind();
+  cfLayout();
+  cfSettle();
+
+  // Diskografie fehlt noch? Laden und fehlende Alben grau dazustellen
+  if (level === 'albums' && g.mbid && !discoMem.get(g.mbid)) {
+    getDisco(g.mbid).then(() => {
+      if (route()[0] === 'flow' && route()[1] === key && CF.flipped < 0) renderFlow('albums', key);
+    }).catch(() => {});
+  }
+}
+
+function cfLayout() {
+  const stage = $('#cf-stage');
+  if (!stage) return false;
+  CF.size = Math.round(Math.min(stage.clientWidth * 0.62, stage.clientHeight * 0.62, 340));
+  stage.style.setProperty('--cf', `${CF.size}px`);
+  const s = CF.size;
+  CF.els.forEach((el, i) => {
+    const d = i - CF.pos;
+    const ad = Math.abs(d);
+    const img = el.firstElementChild.querySelector('img');
+    if (ad > CF_WINDOW + 0.5) {
+      if (el.style.display !== 'none') el.style.display = 'none';
+      // weit weg: Bild aus dem Speicher werfen (sonst stürzt Safari bei großen Sammlungen ab)
+      if (img && ad > CF_WINDOW * 2 && img.hasAttribute('src')) img.removeAttribute('src');
+      return;
+    }
+    if (el.style.display === 'none') el.style.display = '';
+    if (img && !CF.fast && !img.hasAttribute('src')) { img.classList.remove('broken'); img.src = img.dataset.src; }
+    const sign = Math.sign(d);
+    const t = Math.min(ad, 1);
+    const x = ad <= 1 ? d * s * 0.6 : sign * (s * 0.6 + (ad - 1) * s * 0.2);
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${(-t * s * 0.6).toFixed(1)}px) rotateY(${(-sign * t * 64).toFixed(2)}deg)`;
+    el.style.zIndex = String(1000 - Math.round(ad * 10));
   });
-  const cds = state.items.filter((i) => i.type === 'cd').length;
-  box.innerHTML = groups.length
-    ? `<p class="muted small lib-count">${total === 1 ? '1 Interpret' : `${total} Interpreten`} · ${cds === 1 ? '1 CD' : `${cds} CDs`}</p>
-       <div class="grid cd">${groups.map(artistCardHtml).join('')}</div>`
-    : `<p class="empty-small">Nichts gefunden für „${esc(state.search)}“.</p>`;
+  const cur = Math.max(0, Math.min(CF.entries.length - 1, Math.round(CF.pos)));
+  if (cur !== CF.shown) {
+    CF.shown = cur;
+    const e = CF.entries[cur];
+    $('.cf-title').textContent = e.title;
+    $('.cf-sub').textContent = e.sub;
+    const scrub = $('#cf-scrub');
+    if (scrub && document.activeElement !== scrub) scrub.value = cur;
+    if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
+  }
+  return true;
 }
 
-// Interpret ohne Datenbank-Treffer (oder Sampler): nur die eigenen CDs zeigen
-function renderNameGroup(key) {
-  const g = libraryGroups().find((x) => x.key === key);
-  state.current = { kind: 'group', key };
-  view().innerHTML = `${header(g?.name || 'Interpret', { back: true })}
-    <div id="detail-body">
-      ${!g ? '<p class="empty-small">Hier ist nichts mehr.</p>' : `
-        ${g.various ? '' : '<p class="hint">Für diesen Interpreten gibt es noch keinen Datenbank-Treffer. Tippe ein Album an → „Treffer ändern“ – dann siehst du hier auch alle Alben, die dir noch fehlen.</p>'}
-        <div class="grid cd">${g.items.slice().sort(byYear).map(cardHtml).join('')}</div>`}
+// Wenn das Blättern zur Ruhe kommt: Position merken, Mitte in hoher Auflösung laden
+function cfSettle() {
+  clearTimeout(CF.settleTimer);
+  CF.settleTimer = setTimeout(() => {
+    const cur = Math.round(CF.pos);
+    const e = CF.entries[cur];
+    if (!e || !$('#cf-stage')) return;
+    CF.mem[`${CF.level}:${CF.key}`] = e.key;
+    const img = CF.els[cur]?.querySelector('img');
+    if (img && /\/front-250$/.test(img.dataset.src || '') && img.hasAttribute('src')) {
+      const hi = img.dataset.src.replace('/front-250', '/front-500');
+      const probe = new Image();
+      probe.onload = () => { if (img.isConnected) img.src = hi; };
+      probe.src = hi;
+    }
+  }, 350);
+}
+
+function cfAnimate() {
+  cancelAnimationFrame(CF.raf);
+  const step = () => {
+    const diff = CF.target - CF.pos;
+    if (Math.abs(diff) < 0.002) { CF.pos = CF.target; cfLayout(); cfSettle(); return; }
+    CF.pos += diff * 0.16;
+    if (cfLayout()) CF.raf = requestAnimationFrame(step);
+  };
+  CF.raf = requestAnimationFrame(step);
+}
+
+function cfGo(i) {
+  CF.target = Math.max(0, Math.min(CF.entries.length - 1, i));
+  cfAnimate();
+}
+
+function cfUnflip() {
+  if (CF.flipped < 0) return;
+  CF.els[CF.flipped]?.classList.remove('flipped');
+  CF.flipped = -1;
+}
+
+function cfBackHtml(i, det, err) {
+  const e = CF.entries[i];
+  const artist = state.current?.g?.name || '';
+  const l = spotifyLinks(artist, e.title, det?.spotify);
+  let list = '<p class="hint"><span class="spinner small"></span> Lade Titel …</p>';
+  if (det) list = tracksHtml(det);
+  else if (err) list = `<p class="hint">${esc(err)}</p>`;
+  const wished = e.missing && isWished(`mb:${e.album.mbid}`);
+  return `<div class="cf-back-head">
+      <div class="cf-back-titles"><b>${esc(e.title)}</b><span>${esc(artist)}</span></div>
+      ${e.missing ? `<button class="cf-round ${wished ? 'on' : ''}" data-action="cf-wish" data-i="${i}" aria-label="Wunschliste">${icon('heart', 18)}</button>` : ''}
+      <button class="cf-round" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>
+      <a class="cf-play" href="${esc(l.app)}" aria-label="In Spotify öffnen">${icon('play', 20)}</a>
+    </div>
+    <div class="cf-back-list">${list}</div>`;
+}
+
+async function cfFlip(i) {
+  if (CF.flipped === i) { cfUnflip(); return; }
+  cfUnflip();
+  const el = CF.els[i];
+  const e = CF.entries[i];
+  const mbid = e.missing ? e.album.mbid : e.item?.mbid;
+  const back = el.querySelector('.cf-back');
+  back.innerHTML = cfBackHtml(i, null, mbid ? null : 'Keine Titelliste – ordne das Album über „Treffer ändern“ zu.');
+  const stage = $('#cf-stage');
+  stage.style.setProperty('--flip-scale', Math.max(1.05, Math.min((stage.clientWidth - 32) / CF.size, 1.45)).toFixed(3));
+  el.classList.add('flipped');
+  CF.flipped = i;
+  if (!mbid) return;
+  try {
+    const det = await loadAlbumDetails(mbid);
+    if (CF.flipped === i) back.innerHTML = cfBackHtml(i, det);
+  } catch (err) {
+    if (CF.flipped === i) back.innerHTML = cfBackHtml(i, null, err.message);
+  }
+}
+
+function cfTap(i) {
+  const e = CF.entries[i];
+  if (CF.level === 'artists') location.hash = `#/flow/${enc(e.key)}`;
+  else cfFlip(i);
+}
+
+function cfBind() {
+  const stage = $('#cf-stage');
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.cf-back-titles')) { cfUnflip(); return; } // Titel antippen = zurückdrehen
+    if (e.target.closest('.cf-back')) return; // Titelliste darf scrollen, Knöpfe dürfen klicken
+    cancelAnimationFrame(CF.raf);
+    drag = { x: e.clientX, pos: CF.pos, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.cf-item') };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 6) drag.moved = true;
+    const spacing = CF.size * 0.32;
+    CF.pos = Math.max(-0.4, Math.min(CF.entries.length - 0.6, drag.pos - dx / spacing));
+    const now = performance.now();
+    const dt = Math.max(1, now - drag.lastT);
+    drag.vel = drag.vel * 0.6 + (-(e.clientX - drag.lastX) / spacing / dt * 1000) * 0.4;
+    drag.lastX = e.clientX;
+    drag.lastT = now;
+    cfLayout();
+  });
+  const end = () => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) {
+      const i = d.item ? Number(d.item.dataset.i) : Math.round(CF.pos);
+      if (i === Math.round(CF.target) && Math.abs(CF.pos - i) < 0.3) cfTap(i);
+      else cfGo(i);
+      return;
+    }
+    cfGo(Math.round(CF.pos + Math.max(-8, Math.min(8, d.vel * 0.22))));
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  const scrub = $('#cf-scrub');
+  scrub?.addEventListener('input', () => {
+    // schnelles Schieben: erst Bilder laden, wenn der Finger kurz ruht
+    CF.fast = true;
+    clearTimeout(CF.fastTimer);
+    CF.fastTimer = setTimeout(() => { CF.fast = false; cfLayout(); }, 180);
+    cfGo(Number(scrub.value));
+  });
+}
+
+window.addEventListener('resize', () => { if ($('#cf-stage')) cfLayout(); });
+document.addEventListener('keydown', (e) => {
+  if (!$('#cf-stage') || document.activeElement?.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') cfGo(Math.round(CF.target) + 1);
+  if (e.key === 'ArrowLeft') cfGo(Math.round(CF.target) - 1);
+  if (e.key === 'Enter') cfTap(Math.round(CF.target));
+});
+
+function openAddMenu() {
+  openSheet(`<h2>Hinzufügen</h2>
+    <div class="group sheet-group">
+      <a class="cell" href="#/scan"><span class="cell-ic">${icon('camera', 18)}</span><span class="cell-label">Regal fotografieren</span>${state.scan.rows.length ? '<span class="cell-value">Prüfliste offen</span>' : ''}${chev()}</a>
+      <button class="cell action" data-action="add"><span class="cell-ic">${icon('search', 18)}</span><span class="cell-label">CD suchen und hinzufügen</span>${chev()}</button>
+    </div>`);
+}
+
+// =====================================================================
+// 2) Menü (wie das Hauptmenü des iPod)
+// =====================================================================
+function renderMenu() {
+  const cellIc = (name) => `<span class="cell-ic">${icon(name, 18)}</span>`;
+  const groups = libraryGroups();
+  view().innerHTML = `${header('Regal', { back: true })}
+    <div class="group">
+      <a class="cell" href="#/">${cellIc('flow')}<span class="cell-label">Durchblättern</span>${chev()}</a>
+      <a class="cell" href="#/interpreten">${cellIc('user')}<span class="cell-label">Interpreten</span><span class="cell-value">${groups.length}</span>${chev()}</a>
+      <a class="cell" href="#/alben">${cellIc('disc')}<span class="cell-label">Alben</span><span class="cell-value">${state.items.length}</span>${chev()}</a>
+    </div>
+    <h3 class="group-title">Sammeln</h3>
+    <div class="group">
+      <a class="cell" href="#/luecken">${cellIc('checklist')}<span class="cell-label">Lücken</span>${chev()}</a>
+      <a class="cell" href="#/wuensche">${cellIc('heart')}<span class="cell-label">Wunschliste</span><span class="cell-value">${state.wishes.length || ''}</span>${chev()}</a>
+    </div>
+    <h3 class="group-title">Hinzufügen</h3>
+    <div class="group">
+      <a class="cell" href="#/scan">${cellIc('camera')}<span class="cell-label">Regal fotografieren</span>${state.scan.rows.length ? '<span class="cell-value">Prüfliste offen</span>' : ''}${chev()}</a>
+      <button class="cell action" data-action="add">${cellIc('search')}<span class="cell-label">CD suchen und hinzufügen</span>${chev()}</button>
+    </div>
+    <div class="group">
+      <a class="cell" href="#/einstellungen">${cellIc('settings')}<span class="cell-label">Einstellungen</span>${chev()}</a>
     </div>`;
 }
 
-function emptyLibrary() {
-  const cd = state.libTab === 'cd';
-  return `<div class="empty">
-    ${icon(cd ? 'disc' : 'movie', 46)}
-    <h2>${cd ? 'Noch keine CDs' : 'Noch keine DVDs'}</h2>
-    <p>Fotografiere dein Regal – die App erkennt die Hüllen und legt sie hier mit Cover ab.</p>
-    <a class="btn primary" href="#/scan">${icon('camera', 20)} Regal fotografieren</a>
-    <button class="btn ghost" data-action="add">${icon('plus', 20)} Von Hand hinzufügen</button>
-  </div>`;
+// =====================================================================
+// 3) Listen: Interpreten, Alben, Interpretenseite
+// =====================================================================
+function renderArtistList() {
+  view().innerHTML = `${header('Interpreten', { back: true })}
+    ${searchHtml('q-artists', 'Interpret suchen')}
+    <div id="artist-list"></div>`;
+  bindSearch('q-artists', fillArtistList);
+  fillArtistList();
 }
 
+function fillArtistList() {
+  const box = $('#artist-list');
+  if (!box) return;
+  const groups = libraryGroups();
+  if (!groups.length) { box.innerHTML = '<p class="empty-small">Noch keine CDs in der Sammlung.</p>'; return; }
+  const q = norm(state.listQ['q-artists']);
+  const shown = q ? groups.filter((g) => norm(g.name).includes(q) || g.items.some((i) => norm(i.title).includes(q))) : groups;
+  box.innerHTML = shown.length
+    ? `<div class="list">${shown.map((g) => `<a class="lrow" href="#/interpreten/${enc(g.key)}">
+        ${coverHtml({ title: g.name, cover: groupCover(g) }, 'thumb')}
+        <span class="row-text"><span class="row-title">${esc(g.name)}</span><span class="row-sub">${esc(groupSub(g))}</span></span>
+        ${chev()}</a>`).join('')}</div>`
+    : `<p class="empty-small">Nichts gefunden.</p>`;
+}
+
+function renderAlbumList() {
+  view().innerHTML = `${header('Alben', { back: true })}
+    ${searchHtml('q-albums', 'Album oder Interpret')}
+    <div id="album-list"></div>`;
+  bindSearch('q-albums', fillAlbumList);
+  fillAlbumList();
+}
+
+function albumRow(it) {
+  return `<button class="lrow" data-action="item" data-id="${it.id}">
+    ${coverHtml(it, 'thumb')}
+    <span class="row-text"><span class="row-title">${esc(it.title)}</span><span class="row-sub">${esc([it.artist, it.year].filter(Boolean).join(' · '))}</span></span>
+    ${chev()}</button>`;
+}
+
+function fillAlbumList() {
+  const box = $('#album-list');
+  if (!box) return;
+  if (!state.items.length) { box.innerHTML = '<p class="empty-small">Noch keine CDs in der Sammlung.</p>'; return; }
+  const q = norm(state.listQ['q-albums']);
+  const list = state.items.filter((i) => !q || norm(`${i.title} ${i.artist}`).includes(q))
+    .sort((a, b) => collator.compare(sortName(a.title), sortName(b.title)));
+  box.innerHTML = list.length ? `<div class="list">${list.map(albumRow).join('')}</div>` : '<p class="empty-small">Nichts gefunden.</p>';
+}
+
+// Interpret: alle Studioalben – eigene normal, fehlende grau
+async function renderArtistPage(key) {
+  const g = libraryGroups().find((x) => x.key === key);
+  view().innerHTML = `${header(g?.name || 'Interpret', {
+    back: true,
+    actions: g ? `<a class="glass-btn round" href="#/flow/${enc(key)}" aria-label="Durchblättern">${icon('flow', 22)}</a>` : '',
+  })}
+    <div id="detail-body"><p class="hint"><span class="spinner small"></span> Lade alle Alben …</p></div>`;
+  if (!g) { $('#detail-body').innerHTML = '<p class="empty-small">Hier ist nichts mehr.</p>'; return; }
+  if (!g.mbid) {
+    $('#detail-body').innerHTML = `
+      ${g.various ? '' : '<p class="hint">Für diesen Interpreten gibt es noch keinen Datenbank-Treffer. Tippe ein Album an → „Treffer ändern“ – dann siehst du hier auch alle Alben, die dir noch fehlen.</p>'}
+      <div class="list">${g.items.slice().sort(byYear).map(albumRow).join('')}</div>`;
+    return;
+  }
+  let disco;
+  try {
+    disco = await getDisco(g.mbid);
+  } catch (e) {
+    if (route()[1] === key && $('#detail-body')) {
+      $('#detail-body').innerHTML = `<p class="hint error">${esc(e.message)}</p>
+        <div class="list">${g.items.slice().sort(byYear).map(albumRow).join('')}</div>`;
+    }
+    return;
+  }
+  if (route()[1] !== key || !$('#detail-body')) return;
+  state.current = { kind: 'artist', key, mbid: g.mbid, disco };
+  fillArtist();
+}
+
+function fillArtist() {
+  const { mbid, disco, key } = state.current;
+  const g = libraryGroups().find((x) => x.key === key) || { key, mbid, name: '', items: [] };
+  state.current.g = g;
+  const list = studioAlbums(disco).map((a) => ({ a, item: ownedAlbum(a, mbid) }));
+  const owned = list.filter((x) => x.item).length;
+  const shown = state.albumFilter === 'missing' ? list.filter((x) => !x.item) : list;
+  const counted = new Set(list.filter((x) => x.item).map((x) => x.item.id));
+  const others = g.items.filter((i) => !counted.has(i.id));
+  $('#detail-body').innerHTML = `
+    ${progressHtml(owned, list.length, state.includeLive ? 'Alben' : 'Studioalben')}
+    <div class="chips">
+      <button class="chip ${state.albumFilter === 'all' ? 'on' : ''}" data-action="album-filter" data-f="all">Alle</button>
+      <button class="chip ${state.albumFilter === 'missing' ? 'on' : ''}" data-action="album-filter" data-f="missing">Fehlende</button>
+      <button class="chip ${state.includeLive ? 'on' : ''}" data-action="toggle-live">${state.includeLive ? `${icon('check', 14)} ` : '+ '}Live-Alben</button>
+    </div>
+    ${shown.length ? `<div class="list">${shown.map(({ a, item }) => (item
+    ? `<button class="lrow" data-action="item" data-id="${item.id}">
+        ${coverHtml({ title: a.title, artist: g.name, cover: item.cover || a.cover }, 'thumb')}
+        <span class="row-text"><span class="row-title">${esc(a.title)}</span><span class="row-sub">${esc(a.year)}</span></span>${chev()}</button>`
+    : `<div class="lrow missing">
+        <button class="lrow-hit" data-action="missing-album" data-key="${a.mbid}">
+          ${coverHtml({ title: a.title, artist: g.name, cover: a.cover }, 'thumb')}
+          <span class="row-text"><span class="row-title">${esc(a.title)}</span><span class="row-sub">${esc([a.year, 'fehlt'].filter(Boolean).join(' · '))}</span></span>
+        </button>
+        <button class="heart-btn ${isWished(`mb:${a.mbid}`) ? 'on' : ''}" data-action="wish-album" data-key="${a.mbid}" aria-label="Wunschliste">${icon('heart', 20)}</button>
+      </div>`)).join('')}</div>`
+    : `<p class="empty-small">${list.length ? 'Du hast alle – Glückwunsch!' : 'MusicBrainz kennt keine Studioalben von diesem Interpreten.'}</p>`}
+    ${others.length ? `<h3 class="group-title">Weitere CDs</h3><div class="list">${others.slice().sort(byYear).map(albumRow).join('')}</div>
+      <p class="group-footer">Best-ofs, Live-Alben, Singles oder EPs – zählen nicht zu den Studioalben.</p>` : ''}
+    <p class="tiny">Daten: MusicBrainz</p>`;
+}
+
+// =====================================================================
+// Album-Blatt: Cover, Spotify, Titelliste
+// =====================================================================
 function showItem(id) {
   const it = state.items.find((i) => i.id === id);
   if (!it) return;
-  const meta = it.type === 'cd' ? [it.artist, it.year] : [videoLabel(it)];
-  const links = [];
-  const onThisArtist = state.current?.kind === 'artist' && state.current.mbid === it.artistMbid;
-  if (it.type === 'cd' && it.artistMbid && it.artistMbid !== mb.VARIOUS_ARTISTS && !onThisArtist) {
-    links.push(`<a class="btn" href="#/sammlung/artist/${it.artistMbid}">${icon('disc', 20)} Alle Alben von ${esc(it.artistName || it.artist)}</a>`);
-  }
-  const here = state.current;
-  if (it.type === 'dvd' && it.collectionId && !(here?.kind === 'col' && here.id === it.collectionId)) {
-    links.push(`<a class="btn" href="#/sammlung/reihe/${encodeURIComponent(it.collectionId)}">${icon('movie', 20)} Alle Filme: ${esc(it.collectionName || 'Filmreihe')}</a>`);
-  }
-  if (it.kind === 'tv' && it.vid && !(here?.kind === 'tv' && here.id === it.vid)) {
-    links.push(`<a class="btn" href="#/sammlung/serie/${encodeURIComponent(it.vid)}">${icon('movie', 20)} Alle Staffeln</a>`);
-  }
+  const g = libraryGroups().find((x) => x.items.includes(it));
+  const onThisArtist = state.current?.g?.key === g?.key;
   const sheet = openSheet(`<div class="detail">
     ${coverHtml({ ...it, cover: bigCover(it.cover) }, 'big')}
     <h2>${esc(it.title)}</h2>
-    <p class="muted">${esc(meta.filter(Boolean).join(' · '))}</p>
-    ${!it.mbid && !it.vid ? '<p class="hint">Ohne Datenbank-Treffer gespeichert. Mit „Treffer ändern“ findest du Cover und Infos.</p>' : ''}
-    ${it.type === 'cd' ? albumSectionHtml() : ''}
-    <div class="btn-col">
-      ${links.join('')}
-      <button class="btn" data-action="rematch" data-id="${it.id}">${icon('edit', 20)} Treffer ändern</button>
-      <button class="btn danger" data-action="delete" data-id="${it.id}">${icon('trash', 20)} Aus der Sammlung löschen</button>
+    <p class="muted">${esc([it.artist, it.year].filter(Boolean).join(' · '))}</p>
+    ${!it.mbid ? '<p class="hint">Ohne Datenbank-Treffer gespeichert. Mit „Treffer ändern“ findest du Cover und Titel.</p>' : ''}
+    ${albumSectionHtml()}
+    <div class="group sheet-group">
+      ${g && !g.various && !onThisArtist ? `<a class="cell" href="#/interpreten/${enc(g.key)}"><span class="cell-label">Alle Alben von ${esc(g.name)}</span>${chev()}</a>` : ''}
+      <button class="cell action" data-action="rematch" data-id="${it.id}"><span class="cell-label">Treffer ändern</span>${chev()}</button>
+      <button class="cell action danger" data-action="delete" data-id="${it.id}"><span class="cell-label">Aus der Sammlung löschen</span></button>
     </div>
     <p class="tiny">Hinzugefügt am ${new Date(it.addedAt).toLocaleDateString('de-DE')}${it.source === 'foto' ? ' per Foto' : ''}</p>
   </div>`);
-  if (it.type === 'cd') fillAlbumSection(sheet, it);
+  fillAlbumSection(sheet, it);
 }
 
-// ---------- Titelliste und Spotify ----------
 const albumMem = new Map();
 
 async function loadAlbumDetails(mbid) {
@@ -633,7 +705,7 @@ async function loadAlbumDetails(mbid) {
 
 // Direkt zum Album, wenn MusicBrainz den Spotify-Link kennt – sonst Spotify-Suche
 function spotifyLinks(artist, title, spotifyId) {
-  const q = encodeURIComponent(`${artist || ''} ${title || ''}`.trim());
+  const q = enc(`${artist || ''} ${title || ''}`.trim());
   return spotifyId
     ? { exact: true, app: `spotify:album:${spotifyId}`, web: `https://open.spotify.com/album/${spotifyId}` }
     : { exact: false, app: `spotify:search:${q}`, web: `https://open.spotify.com/search/${q}` };
@@ -652,7 +724,7 @@ function tracksHtml(det) {
   const multi = discs.length > 1;
   const total = all.reduce((s, t) => s + (t.ms || 0), 0);
   return discs.map((d) => `
-    ${multi ? `<h4 class="disc-title">${/CD/i.test(d.format) ? 'CD' : 'Disc'} ${d.n}${d.title ? ` – ${esc(d.title)}` : ''}</h4>` : ''}
+    ${multi ? `<h4 class="disc-title">CD ${d.n}${d.title ? ` – ${esc(d.title)}` : ''}</h4>` : ''}
     <ol class="tracks">${d.tracks.map((t) => `<li><span class="tn">${esc(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
     + `<p class="tracks-foot">${all.length} Titel${total ? `, ${Math.round(total / 60000)} Minuten` : ''}</p>`;
 }
@@ -685,194 +757,30 @@ async function fillAlbumSection(root, a) {
   }
 }
 
-// =====================================================================
-// Durchblättern: Alben-Galerie wie früher auf dem iPod
-// =====================================================================
-const CF = { items: [], els: [], pos: 0, target: 0, size: 240, raf: 0, flipped: -1, shown: -1 };
-
-function renderCoverFlow() {
-  const items = state.items.filter((i) => i.type === 'cd').sort((a, b) => collator.compare(sortName(a.artist), sortName(b.artist))
-    || (a.year || '').localeCompare(b.year || '') || collator.compare(a.title, b.title));
-  CF.items = items;
-  CF.flipped = -1;
-  CF.shown = -1;
-  view().innerHTML = `${header('Durchblättern', { back: true, compact: true })}
-    ${items.length ? `
-    <div class="cf-stage" id="cf-stage">
-      ${items.map((it, i) => `<div class="cf-item" data-i="${i}">
-        <div class="cf-card">
-          <div class="cf-front"><div class="cover cf-cover" style="--h:${hue(it.title + it.artist)}">
-            <span class="ph">${esc(it.title)}</span>${it.cover ? `<img data-src="${esc(it.cover.replace('/front-250', '/front-500'))}" alt="" draggable="false">` : ''}
-          </div></div>
-          <div class="cf-back"></div>
-        </div>
-      </div>`).join('')}
+function showMissing(a, g) {
+  const wished = isWished(`mb:${a.mbid}`);
+  const sheet = openSheet(`<div class="detail">
+    ${coverHtml({ title: a.title, artist: g.name, cover: bigCover(a.cover) }, 'big')}
+    <h2>${esc(a.title)}</h2>
+    <p class="muted">${esc([g.name, a.year, 'fehlt dir noch'].filter(Boolean).join(' · '))}</p>
+    ${albumSectionHtml()}
+    <div class="group sheet-group">
+      <button class="cell action" data-action="wish-album" data-key="${a.mbid}"><span class="cell-label">${wished ? 'Von der Wunschliste nehmen' : 'Auf die Wunschliste'}</span>${icon('heart', 18, 'cell-chev')}</button>
+      <button class="cell action" data-action="own-album" data-key="${a.mbid}"><span class="cell-label">Hab ich doch – zur Sammlung</span>${icon('check', 18, 'cell-chev')}</button>
     </div>
-    <div class="cf-info"><div class="cf-title"></div><div class="cf-sub"></div></div>
-    <input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${items.length - 1}" step="1" value="0" aria-label="Schnell blättern">
-    <p class="cf-hint">Wischen zum Blättern · Album antippen zum Umdrehen</p>`
-    : `<div class="empty">${icon('disc', 46)}<h2>Noch keine CDs</h2><p>Sobald du CDs in der Sammlung hast, kannst du hier durch deine Alben blättern.</p></div>`}`;
-  if (!items.length) return;
-  CF.els = [...document.querySelectorAll('.cf-item')];
-  // dort weitermachen, wo man zuletzt war
-  const keep = Math.min(Math.round(CF.target || 0), items.length - 1);
-  CF.pos = keep;
-  CF.target = keep;
-  cfBind();
-  cfLayout();
+  </div>`);
+  fillAlbumSection(sheet, { mbid: a.mbid, artist: g.name, title: a.title });
 }
-
-function cfLayout() {
-  const stage = $('#cf-stage');
-  if (!stage) return false;
-  const w = stage.clientWidth;
-  const h = stage.clientHeight;
-  CF.size = Math.round(Math.min(w * 0.6, h * 0.62, 340));
-  stage.style.setProperty('--cf', `${CF.size}px`);
-  const s = CF.size;
-  CF.els.forEach((el, i) => {
-    const d = i - CF.pos;
-    const ad = Math.abs(d);
-    if (ad > 8) { el.style.visibility = 'hidden'; return; }
-    el.style.visibility = 'visible';
-    const img = el.querySelector('img[data-src]');
-    if (img) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
-    const sign = Math.sign(d);
-    const t = Math.min(ad, 1);
-    const x = ad <= 1 ? d * s * 0.6 : sign * (s * 0.6 + (ad - 1) * s * 0.2);
-    const rot = -sign * t * 64;
-    const z = -t * s * 0.6;
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${rot.toFixed(2)}deg)`;
-    el.style.zIndex = String(1000 - Math.round(ad * 10));
-  });
-  const cur = Math.max(0, Math.min(CF.items.length - 1, Math.round(CF.pos)));
-  if (cur !== CF.shown) {
-    CF.shown = cur;
-    const it = CF.items[cur];
-    $('.cf-title').textContent = it.title;
-    $('.cf-sub').textContent = [it.artist, it.year].filter(Boolean).join(' · ');
-    const scrub = $('#cf-scrub');
-    if (scrub && document.activeElement !== scrub) scrub.value = cur;
-    if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
-  }
-  return true;
-}
-
-function cfAnimate() {
-  cancelAnimationFrame(CF.raf);
-  const step = () => {
-    const diff = CF.target - CF.pos;
-    if (Math.abs(diff) < 0.002) { CF.pos = CF.target; cfLayout(); return; }
-    CF.pos += diff * 0.16;
-    if (cfLayout()) CF.raf = requestAnimationFrame(step);
-  };
-  CF.raf = requestAnimationFrame(step);
-}
-
-function cfGo(i) {
-  CF.target = Math.max(0, Math.min(CF.items.length - 1, i));
-  cfAnimate();
-}
-
-function cfUnflip() {
-  if (CF.flipped < 0) return;
-  CF.els[CF.flipped]?.classList.remove('flipped');
-  CF.flipped = -1;
-}
-
-function cfBackHtml(it, det, err) {
-  const l = spotifyLinks(it.artist, it.title, det?.spotify);
-  let list = '<p class="hint"><span class="spinner small"></span> Lade Titel …</p>';
-  if (det) list = tracksHtml(det);
-  else if (err) list = `<p class="hint">${esc(err)}</p>`;
-  return `<div class="cf-back-head">
-      <div class="cf-back-titles"><b>${esc(it.title)}</b><span>${esc(it.artist)}</span></div>
-      <a class="cf-play" href="${esc(l.app)}" aria-label="In Spotify öffnen">${icon('play', 20)}</a>
-    </div>
-    <div class="cf-back-list">${list}</div>`;
-}
-
-async function cfFlip(i) {
-  if (CF.flipped === i) { cfUnflip(); return; }
-  cfUnflip();
-  const el = CF.els[i];
-  const it = CF.items[i];
-  const back = el.querySelector('.cf-back');
-  back.innerHTML = cfBackHtml(it, null, it.mbid ? null : 'Keine Titelliste – ordne das Album über „Treffer ändern“ zu.');
-  // Umgedreht fast bildschirmbreit, damit die Titel gut lesbar sind
-  const stage = $('#cf-stage');
-  stage.style.setProperty('--flip-scale', Math.max(1.05, Math.min((stage.clientWidth - 32) / CF.size, 1.45)).toFixed(3));
-  el.classList.add('flipped');
-  CF.flipped = i;
-  if (!it.mbid) return;
-  try {
-    const det = await loadAlbumDetails(it.mbid);
-    if (CF.flipped === i) back.innerHTML = cfBackHtml(it, det);
-  } catch (e) {
-    if (CF.flipped === i) back.innerHTML = cfBackHtml(it, null, e.message);
-  }
-}
-
-function cfBind() {
-  const stage = $('#cf-stage');
-  let drag = null;
-  stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.cf-back-titles')) { cfUnflip(); return; } // Titel antippen = zurückdrehen
-    if (e.target.closest('.cf-back')) return; // Titelliste darf scrollen, Spotify-Knopf klicken
-    cancelAnimationFrame(CF.raf);
-    drag = { x: e.clientX, pos: CF.pos, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.cf-item') };
-    stage.setPointerCapture(e.pointerId);
-  });
-  stage.addEventListener('pointermove', (e) => {
-    if (!drag) return;
-    const dx = e.clientX - drag.x;
-    if (Math.abs(dx) > 6) drag.moved = true;
-    const spacing = CF.size * 0.32;
-    CF.pos = Math.max(-0.4, Math.min(CF.items.length - 0.6, drag.pos - dx / spacing));
-    const now = performance.now();
-    const dt = Math.max(1, now - drag.lastT);
-    drag.vel = drag.vel * 0.6 + (-(e.clientX - drag.lastX) / spacing / dt * 1000) * 0.4;
-    drag.lastX = e.clientX;
-    drag.lastT = now;
-    cfLayout();
-  });
-  const end = () => {
-    if (!drag) return;
-    const d = drag;
-    drag = null;
-    if (!d.moved) {
-      const i = d.item ? Number(d.item.dataset.i) : Math.round(CF.pos);
-      if (i === Math.round(CF.target) && Math.abs(CF.pos - i) < 0.3) cfFlip(i);
-      else cfGo(i);
-      return;
-    }
-    cfGo(Math.round(CF.pos + Math.max(-8, Math.min(8, d.vel * 0.22))));
-  };
-  stage.addEventListener('pointerup', end);
-  stage.addEventListener('pointercancel', end);
-  const scrub = $('#cf-scrub');
-  scrub.addEventListener('input', () => cfGo(Number(scrub.value)));
-}
-
-window.addEventListener('resize', () => { if ($('#cf-stage')) cfLayout(); });
-document.addEventListener('keydown', (e) => {
-  if (!$('#cf-stage') || document.activeElement?.tagName === 'INPUT') return;
-  if (e.key === 'ArrowRight') cfGo(Math.round(CF.target) + 1);
-  if (e.key === 'ArrowLeft') cfGo(Math.round(CF.target) - 1);
-  if (e.key === 'Enter') cfFlip(Math.round(CF.target));
-});
 
 function rematchItem(id) {
   const it = state.items.find((i) => i.id === id);
   if (!it) return;
   openSearch({
     heading: 'Treffer ändern',
-    type: it.type,
     artist: it.artist,
     title: it.title,
-    seasons: it.seasons,
     onPick: async (m) => {
-      const fresh = itemFromMatch(await enrichVideo(m), it.source);
+      const fresh = itemFromMatch(m, it.source);
       fresh.id = it.id;
       fresh.addedAt = it.addedAt;
       await updateItem(fresh);
@@ -885,109 +793,75 @@ function rematchItem(id) {
 
 function openAdd() {
   openSearch({
-    heading: 'Von Hand hinzufügen',
-    type: state.libTab,
+    heading: 'CD hinzufügen',
     onPick: async (m) => {
       if (isDuplicate(m) && !confirm('Das ist schon in deiner Sammlung. Trotzdem nochmal hinzufügen?')) return;
-      const it = itemFromMatch(await enrichVideo(m), 'hand');
+      const it = itemFromMatch(m, 'hand');
       await addItems([it]);
       toast(`„${it.title}“ hinzugefügt`);
-      state.libTab = it.type;
       render();
       preloadDiscographies();
     },
   });
 }
 
-// Suchblatt: für „Von Hand hinzufügen“, „Treffer ändern“ und „Eintrag korrigieren“
-function openSearch({ heading, type = 'cd', artist = '', title = '', seasons = [], onPick, extraHtml = '', onExtra = null }) {
-  let t = type;
+// Suchblatt: für „CD hinzufügen“, „Treffer ändern“ und „Eintrag korrigieren“
+function openSearch({ heading, artist = '', title = '', onPick, extraHtml = '', onExtra = null }) {
   let results = [];
   const sheet = openSheet(`
     <h2>${esc(heading)}</h2>
-    <div class="seg small" id="s-type" style="--n:2;--i:${type === 'cd' ? 0 : 1}">
-      <button type="button" data-t="cd">${icon('disc', 18)} CD</button>
-      <button type="button" data-t="dvd">${icon('movie', 18)} DVD</button>
-    </div>
     <form class="form" id="s-form">
       <input id="s-artist" placeholder="Interpret" value="${esc(artist)}" autocomplete="off">
       <input id="s-title" placeholder="Albumtitel" value="${esc(title)}" autocomplete="off">
-      <input id="s-seasons" placeholder="Staffeln, z. B. 1, 2 oder 1-3 (nur bei Serien)" value="${esc((seasons || []).join(', '))}" autocomplete="off">
       <button class="btn primary" type="submit">${icon('search', 20)} Suchen</button>
     </form>
     <div id="s-results" class="results"></div>
     <button class="btn ghost" type="button" id="s-raw">Ohne Treffer übernehmen</button>
     ${extraHtml}`);
   const q = (sel) => sheet.querySelector(sel);
-  const sync = () => {
-    sheet.querySelectorAll('#s-type button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
-    q('#s-type').style.setProperty('--i', t === 'cd' ? 0 : 1);
-    q('#s-artist').hidden = t !== 'cd';
-    q('#s-seasons').hidden = t !== 'dvd';
-    q('#s-title').placeholder = t === 'cd' ? 'Albumtitel' : 'Film- oder Serientitel';
-  };
-  const values = () => ({
-    artist: q('#s-artist').value.trim(),
-    title: q('#s-title').value.trim(),
-    seasons: parseSeasons(q('#s-seasons').value),
-  });
+  const values = () => ({ artist: q('#s-artist').value.trim(), title: q('#s-title').value.trim() });
   const go = async () => {
     const v = values();
     const box = q('#s-results');
     if (!v.title && !v.artist) { box.innerHTML = '<p class="hint">Gib einen Titel ein.</p>'; return; }
     box.innerHTML = '<p class="hint"><span class="spinner small"></span> Suche …</p>';
     try {
-      results = t === 'cd' ? await mb.searchAlbums(v.artist, v.title) : await video.search(v.title);
+      results = await mb.searchAlbums(v.artist, v.title);
       box.innerHTML = results.length
         ? results.map((r, i) => `<button class="result" type="button" data-i="${i}">
             ${coverHtml(r, 'thumb')}
             <span class="row-text"><span class="row-title">${esc(r.title)}</span>
-            <span class="row-sub">${esc(r.type === 'cd' ? [r.artist, r.year, albumTypeLabel(r)].filter(Boolean).join(' · ') : videoLabel(r))}</span></span>
-            ${r.kind !== 'tv' && isDuplicate(r) ? '<span class="badge">schon da</span>' : ''}
+            <span class="row-sub">${esc([r.artist, r.year, albumTypeLabel(r)].filter(Boolean).join(' · '))}</span></span>
+            ${isDuplicate(r) ? '<span class="badge">schon da</span>' : ''}
           </button>`).join('')
         : '<p class="hint">Keine Treffer. Prüf die Schreibweise – oder übernimm den Eintrag ohne Treffer.</p>';
     } catch (e) {
       box.innerHTML = `<p class="hint error">${esc(e.message)}</p>`;
     }
   };
-  sync();
-  sheet.querySelectorAll('#s-type button').forEach((b) => b.addEventListener('click', () => {
-    t = b.dataset.t;
-    sync();
-    q('#s-results').innerHTML = '';
-  }));
   q('#s-form').addEventListener('submit', (e) => { e.preventDefault(); document.activeElement?.blur(); go(); });
   q('#s-results').addEventListener('click', async (e) => {
     const b = e.target.closest('.result');
     if (!b || b.classList.contains('busy')) return;
-    const r = { ...results[+b.dataset.i] };
-    if (r.type === 'dvd' && r.kind === 'tv') r.seasons = values().seasons;
     b.classList.add('busy');
-    try { await onPick(r); } finally { b.classList.remove('busy'); }
+    try { await onPick({ ...results[+b.dataset.i] }); } finally { b.classList.remove('busy'); }
   });
   q('#s-raw').addEventListener('click', () => {
     const v = values();
     if (!v.title) { toast('Gib zuerst einen Titel ein.'); return; }
-    onPick({
-      type: t,
-      artist: t === 'cd' ? v.artist : '',
-      title: v.title,
-      seasons: t === 'dvd' ? v.seasons : [],
-      kind: t === 'cd' ? 'album' : (v.seasons.length ? 'tv' : 'movie'),
-      raw: true,
-    });
+    onPick({ type: 'cd', artist: v.artist, title: v.title, raw: true });
   });
   if (onExtra) sheet.addEventListener('click', (e) => { const x = e.target.closest('[data-extra]'); if (x) onExtra(x.dataset.extra); });
   if (title || artist) go();
 }
 
 // =====================================================================
-// 2) Scannen: Foto -> Gemini -> Prüfliste -> Sammlung
+// 4) Scannen: Foto -> Gemini -> Prüfliste -> Sammlung
 // =====================================================================
 const TIPS = `<div class="tips">
   <h3>So klappt die Erkennung am besten</h3>
   <ul>
-    <li>Fotografiere das Regal in Abschnitten – etwa 20 bis 40 Hüllen pro Foto.</li>
+    <li>Fotografiere das Regal in Abschnitten – etwa 20 bis 40 CDs pro Foto.</li>
     <li>Halte das Handy gerade vor die Rücken, sodass die Schrift scharf ist.</li>
     <li>Gutes Licht und möglichst keine Spiegelungen auf den Hüllen.</li>
     <li>Aus der Mediathek kannst du mehrere Fotos auf einmal wählen.</li>
@@ -997,7 +871,7 @@ const TIPS = `<div class="tips">
 
 function renderScan() {
   view().innerHTML = `
-    ${header('Regal scannen')}
+    ${header('Regal fotografieren', { back: true })}
     ${state.geminiKey ? '' : `<div class="notice">${icon('key', 24)}<div>
       <b>Noch kein Gemini-Schlüssel</b>
       <p>Für die Fotoerkennung brauchst du einen kostenlosen Schlüssel von Google. Das dauert zwei Minuten.</p>
@@ -1055,11 +929,10 @@ async function handlePhotos(files) {
       try {
         const blob = await prepareImage(files[i]);
         const { items } = await gemini.recognize(blob, (msg) => setScanStatus(pre + msg));
-        if (!items.length) toast(`${pre}Auf dem Foto wurde nichts erkannt.`);
+        if (!items.length) toast(`${pre}Auf dem Foto wurde keine CD erkannt.`);
         state.scan.rows.push(...items.map((f) => ({ ...f, id: uid(), checked: true, state: 'pending', match: null, dup: false })));
         saveScan();
         renderReview();
-        updateTabBadges();
         matchPending();
       } catch (e) {
         toast(pre + e.message, 'error');
@@ -1072,23 +945,10 @@ async function handlePhotos(files) {
   }
 }
 
-function rowObject(r) {
-  if (r.match) return { ...r.match, type: r.type };
-  return {
-    type: r.type,
-    artist: r.artist,
-    title: r.title,
-    seasons: r.seasons || [],
-    kind: r.type === 'cd' ? 'album' : ((r.seasons || []).length || r.complete ? 'tv' : 'movie'),
-  };
-}
+const rowObject = (r) => (r.match ? { ...r.match } : { artist: r.artist, title: r.title });
 
 function sameThing(a, b) {
-  if (a.type !== b.type) return false;
   if (a.mbid && b.mbid) return a.mbid === b.mbid;
-  if (a.vid && b.vid) {
-    return a.vid === b.vid && (a.kind !== 'tv' || String(a.seasons) === String(b.seasons));
-  }
   return norm(a.title) === norm(b.title) && norm(a.artist) === norm(b.artist);
 }
 
@@ -1101,23 +961,9 @@ function rowDupLabel(r) {
 
 async function matchRow(r) {
   try {
-    if (r.type === 'cd') {
-      const best = mb.pickBest(await mb.searchAlbums(r.artist, r.title), r.artist, r.title);
-      r.match = best;
-      r.state = best ? (best.sure && r.confidence !== 'low' ? 'found' : 'unsure') : 'none';
-    } else {
-      const clean = r.title.replace(/\s*[-–:,]?\s*(staffel|season|die komplette serie|komplette serie|the complete series)\b.*$/i, '').trim() || r.title;
-      const wantTv = (r.seasons || []).length > 0 || r.complete;
-      const best = video.pickBest(await video.search(clean), clean, wantTv);
-      if (best) {
-        if (best.kind === 'tv') best.seasons = r.seasons || [];
-        await enrichVideo(best, { complete: r.complete && best.kind === 'tv' });
-        r.match = best;
-        r.state = best.sure && r.confidence !== 'low' ? 'found' : 'unsure';
-      } else {
-        r.state = 'none';
-      }
-    }
+    const best = mb.pickBest(await mb.searchAlbums(r.artist, r.title), r.artist, r.title);
+    r.match = best;
+    r.state = best ? (best.sure && r.confidence !== 'low' ? 'found' : 'unsure') : 'none';
   } catch (e) {
     r.state = 'error';
     r.error = e.message;
@@ -1147,7 +993,6 @@ async function matchPending() {
 
 function rowHtml(r) {
   const o = rowObject(r);
-  const sub = r.type === 'cd' ? (o.artist || 'Interpret unbekannt') : videoLabel(o);
   const recognized = r.match && norm(r.match.title) !== norm(r.title)
     ? `<span class="row-note">erkannt: ${esc(r.artist ? `${r.artist} – ` : '')}${esc(r.title)}</span>` : '';
   const warn = !r.dup && (r.state === 'unsure' || r.state === 'error' || r.confidence === 'low');
@@ -1156,12 +1001,12 @@ function rowHtml(r) {
   else if (r.dup) badge = `<span class="badge">${r.dup}</span>`;
   else if (r.state === 'error') badge = '<span class="badge warn">Suche fehlgeschlagen</span>';
   else if (warn) badge = '<span class="badge warn">unsicher</span>';
-  else if (r.state === 'none' || r.state === 'nokey') badge = '<span class="badge">ohne Cover</span>';
+  else if (r.state === 'none') badge = '<span class="badge">ohne Cover</span>';
   return `<div class="row ${r.checked ? '' : 'off'}">
     <button class="check ${r.checked ? 'on' : ''} ${warn ? 'warn' : ''}" data-action="row-toggle" data-id="${r.id}" aria-label="${r.checked ? 'Abwählen' : 'Auswählen'}">${icon('check', 16)}</button>
     <button class="row-main" data-action="row-edit" data-id="${r.id}">
       ${coverHtml(o, 'thumb')}
-      <span class="row-text"><span class="row-title">${esc(o.title)}</span><span class="row-sub">${esc(sub)}</span>${recognized}</span>
+      <span class="row-text"><span class="row-title">${esc(o.title)}</span><span class="row-sub">${esc(o.artist || 'Interpret unbekannt')}</span>${recognized}</span>
       ${badge}
     </button>
   </div>`;
@@ -1185,7 +1030,7 @@ function renderReview() {
     <p class="hint">Tippe auf einen Eintrag, um ihn zu korrigieren. Gelb markierte solltest du kurz prüfen.</p>
     <div class="rows">${rows.map(rowHtml).join('')}</div>
     <div class="review-actions">
-      <button class="btn primary" data-action="scan-save">${pending ? '<span class="spinner small"></span> ' : ''}${n === 1 ? '1 Eintrag' : `${n} Einträge`} hinzufügen</button>
+      <button class="btn primary" data-action="scan-save">${pending ? '<span class="spinner small"></span> ' : ''}${n === 1 ? '1 CD' : `${n} CDs`} hinzufügen</button>
     </div>`;
 }
 
@@ -1194,32 +1039,25 @@ function editRow(id) {
   if (!r) return;
   openSearch({
     heading: 'Eintrag korrigieren',
-    type: r.type,
     artist: r.match?.artist ?? r.artist,
     title: r.match?.title ?? r.title,
-    seasons: r.seasons,
     extraHtml: `<button class="btn danger" type="button" data-extra="remove">${icon('trash', 20)} Aus der Liste entfernen</button>`,
     onExtra: () => {
       state.scan.rows = state.scan.rows.filter((x) => x.id !== id);
       saveScan();
       closeSheet();
       renderReview();
-      updateTabBadges();
     },
     onPick: async (m) => {
-      r.type = m.type;
       r.confidence = 'high';
       if (m.raw) {
         r.match = null;
         r.state = 'none';
         r.artist = m.artist;
         r.title = m.title;
-        r.seasons = m.seasons;
       } else {
-        if (m.type === 'dvd') await enrichVideo(m);
         r.match = m;
         r.state = 'found';
-        r.seasons = m.seasons || [];
       }
       r.dup = false;
       r.dup = rowDupLabel(r);
@@ -1239,15 +1077,13 @@ async function saveScanRows() {
   await addItems(items);
   state.scan.rows = [];
   saveScan();
-  updateTabBadges();
-  toast(`${items.length} zur Sammlung hinzugefügt`);
-  state.libTab = items[0].type;
-  location.hash = '#/sammlung';
+  toast(`${items.length === 1 ? '1 CD' : `${items.length} CDs`} hinzugefügt`);
+  location.hash = '#/';
   preloadDiscographies();
 }
 
 // =====================================================================
-// 3) Lücken: Diskografien (MusicBrainz) und Filmreihen/Serien (TMDB)
+// 5) Lücken: Diskografien (MusicBrainz)
 // =====================================================================
 const discoMem = new Map();
 const discoTried = new Set();
@@ -1271,13 +1107,7 @@ async function getDisco(mbid, { fetch = true, force = false } = {}) {
 }
 
 function artistGroups() {
-  const map = new Map();
-  for (const it of state.items) {
-    if (it.type !== 'cd' || !it.artistMbid || it.artistMbid === mb.VARIOUS_ARTISTS) continue;
-    if (!map.has(it.artistMbid)) map.set(it.artistMbid, { mbid: it.artistMbid, name: it.artistName || it.artist, items: [] });
-    map.get(it.artistMbid).items.push(it);
-  }
-  return [...map.values()];
+  return libraryGroups().filter((g) => g.mbid);
 }
 
 function studioAlbums(disco) {
@@ -1302,7 +1132,6 @@ function discoProgress(mbid, disco) {
 function preloadDiscographies() {
   if (preloading) return preloading;
   preloading = (async () => {
-    // 1. Schritt: Gespeichertes sofort laden (schnell)
     const todo = [];
     for (const g of artistGroups()) {
       const c = discoMem.get(g.mbid) || await getCache(`mb:${g.mbid}`);
@@ -1310,11 +1139,10 @@ function preloadDiscographies() {
       if (!c || Date.now() - c.at >= 30 * DAY) todo.push(g);
     }
     refreshOverviews();
-    // 2. Schritt: Fehlendes aus dem Internet holen (langsam)
     for (const g of todo) {
       discoTried.add(g.mbid);
       try { await getDisco(g.mbid); } catch { /* später nochmal */ }
-      if (onGapList('cd')) fillGaps();
+      if (route()[0] === 'luecken') fillGaps();
     }
   })().finally(() => {
     preloading = null;
@@ -1323,391 +1151,119 @@ function preloadDiscographies() {
   return preloading;
 }
 
-const onGapList = (tab) => route()[0] === 'luecken' && !route()[1] && state.gapTab === tab && !!$('#gap-list');
-const onLibrary = (tab) => route()[0] === 'sammlung' && !route()[1] && state.libTab === tab && !!$('#lib-grid');
-
+// Listen, die Fortschritt zeigen, nach dem Laden auffrischen
 function refreshOverviews() {
-  if (onGapList('cd')) fillGaps();
-  if (onGapList('dvd')) fillGapsDvd();
-  if (onLibrary('cd') || onLibrary('dvd')) fillLibrary();
+  const page = route()[0];
+  if (page === 'luecken') fillGaps();
+  if (page === 'interpreten' && !route()[1]) fillArtistList();
 }
 
-function gapRow({ href, ic, name, owned, total, loading, failed }) {
+function gapRow({ href, name, owned, total, loading, failed }) {
   const done = !loading && total > 0 && owned >= total;
   const pct = total ? Math.round((owned / total) * 100) : 0;
   let right = `${owned} / ${total}`;
   if (loading) right = failed ? 'nicht geladen' : '<span class="spinner small"></span>';
   return `<a class="gap-row" href="${href}">
-    <span class="gap-ic is-${ic} ${done ? 'done' : ''}">${icon(done ? 'check' : ic, 20)}</span>
+    <span class="gap-ic ${done ? 'done' : ''}">${icon(done ? 'check' : 'disc', 20)}</span>
     <span class="gap-main">
       <span class="gap-top"><span class="gap-name">${esc(name)}</span><span class="muted">${right}</span></span>
       <span class="bar ${done ? 'done' : ''}"><i style="width:${loading ? 0 : pct}%"></i></span>
     </span>
-    ${icon('chevron', 18, 'muted')}
+    ${chev()}
   </a>`;
 }
 
 function renderGaps() {
   view().innerHTML = `
-    ${header('Lücken')}
-    ${segHtml('gap', 'gap-tab', [['cd', `${icon('disc', 18)} Interpreten`], ['dvd', `${icon('movie', 18)} Filme und Serien`]], state.gapTab)}
+    ${header('Lücken', { back: true })}
     <div class="chips">
       <button class="chip ${state.gapFilter === 'all' ? 'on' : ''}" data-action="gap-filter" data-f="all">Alle</button>
       <button class="chip ${state.gapFilter === 'open' ? 'on' : ''}" data-action="gap-filter" data-f="open">Nur unvollständige</button>
-      ${state.gapTab === 'cd' ? `<button class="chip ${state.includeLive ? 'on' : ''}" data-action="toggle-live">${state.includeLive ? `${icon('check', 14)} ` : '+ '}Live-Alben</button>` : ''}
+      <button class="chip ${state.includeLive ? 'on' : ''}" data-action="toggle-live">${state.includeLive ? `${icon('check', 14)} ` : '+ '}Live-Alben</button>
     </div>
     <div id="gap-list"></div>`;
-  animateSegs();
   fillGaps();
 }
 
 async function fillGaps() {
-  const box = $('#gap-list');
-  if (!box) return;
-  if (state.gapTab === 'dvd') { await fillGapsDvd(); return; }
+  if (!$('#gap-list')) return;
   const groups = artistGroups();
-  if (!groups.length) { box.innerHTML = emptyGaps('cd'); return; }
+  if (!groups.length) {
+    $('#gap-list').innerHTML = `<div class="empty">${icon('disc', 46)}<h2>Noch keine Interpreten</h2>
+      <p>Sobald du CDs in der Sammlung hast, siehst du hier pro Interpret, welche Studioalben dir noch fehlen.</p></div>`;
+    return;
+  }
   const rows = [];
   for (const g of groups) {
     const disco = await getDisco(g.mbid, { fetch: false });
     rows.push({ ...g, disco, ...(disco ? discoProgress(g.mbid, disco) : {}) });
   }
-  if (!onGapList('cd')) return;
-  rows.sort((a, b) => collator.compare(sortName(a.name), sortName(b.name)));
+  if (route()[0] !== 'luecken' || !$('#gap-list')) return;
   const shown = state.gapFilter === 'open' ? rows.filter((r) => !r.disco || r.owned < r.total) : rows;
-  const unmatched = state.items.filter((i) => i.type === 'cd' && !i.artistMbid).length;
+  const unmatched = state.items.filter((i) => !i.artistMbid).length;
   $('#gap-list').innerHTML = `
-    <div class="list">${shown.map((r) => gapRow({
-    href: `#/luecken/artist/${r.mbid}`,
-    ic: 'disc',
+    ${shown.length ? `<div class="list">${shown.map((r) => gapRow({
+    href: `#/interpreten/${enc(r.key)}`,
     name: r.name,
     owned: r.owned,
     total: r.total,
     loading: !r.disco,
     failed: !r.disco && discoTried.has(r.mbid) && !preloading,
-  })).join('')}</div>
+  })).join('')}</div>` : ''}
     ${state.gapFilter === 'open' && !shown.length ? '<p class="empty-small">Alles komplett – stark!</p>' : ''}
-    ${unmatched ? `<p class="hint">${unmatched === 1 ? '1 CD ohne Datenbank-Treffer wird' : `${unmatched} CDs ohne Datenbank-Treffer werden`} hier nicht gezählt. Öffne sie in der Sammlung und tippe auf „Treffer ändern“.</p>` : ''}
-    <p class="tiny">Gezählt werden nur Studioalben${state.includeLive ? ' und Live-Alben' : ''} – keine Singles, EPs oder Best-ofs. Daten: MusicBrainz.</p>`;
+    ${unmatched ? `<p class="group-footer">${unmatched === 1 ? '1 CD ohne Datenbank-Treffer wird' : `${unmatched} CDs ohne Datenbank-Treffer werden`} hier nicht gezählt. Öffne sie und tippe auf „Treffer ändern“.</p>` : ''}
+    <p class="group-footer">Gezählt werden nur Studioalben${state.includeLive ? ' und Live-Alben' : ''} – keine Singles, EPs oder Best-ofs. Daten: MusicBrainz.</p>`;
   if (rows.some((r) => !r.disco && !discoTried.has(r.mbid))) preloadDiscographies();
 }
 
-function emptyGaps(type) {
-  if (type === 'cd') {
-    return `<div class="empty">${icon('disc', 46)}<h2>Noch keine Interpreten</h2>
-      <p>Sobald du CDs in der Sammlung hast, siehst du hier pro Interpret, welche Studioalben dir noch fehlen.</p>
-      <a class="btn primary" href="#/scan">${icon('camera', 20)} Regal fotografieren</a></div>`;
-  }
-  return `<div class="empty">${icon('movie', 46)}<h2>Noch keine Reihen oder Serien</h2>
-    <p>Hast du Filme aus einer Reihe (z. B. Harry Potter) oder Serien-Staffeln, siehst du hier, was dir noch fehlt.</p></div>`;
-}
-
-// ---------- Filmreihen/Serien mit Zwischenspeicher ----------
-const videoMem = new Map(); // 'col:ID' bzw. 'tv:ID' -> Daten
-const videoTried = new Set();
-let videoLoading = null;
-
-async function cachedVideo(key, fn) {
-  const c = await getCache(`video:${key}`);
-  if (c) videoMem.set(key, c.data);
-  if (c && Date.now() - c.at < 30 * DAY) return c.data;
-  try {
-    const d = await fn();
-    await setCache(`video:${key}`, d);
-    videoMem.set(key, d);
-    return d;
-  } catch (e) {
-    if (c) return c.data;
-    throw e;
-  }
-}
-const cachedCollection = (id) => cachedVideo(`col:${id}`, () => video.collection(id));
-const cachedTv = (vid) => cachedVideo(`tv:${vid}`, () => video.tvDetails(vid));
-const released = (list) => list.filter((p) => p.date && p.date <= today());
-
-// Daten aller Reihen/Serien der Sammlung im Hintergrund laden
-function preloadVideos() {
-  if (videoLoading) return videoLoading;
-  videoLoading = (async () => {
-    const todo = [];
-    for (const g of videoGroups()) {
-      if (g.kind === 'single') continue;
-      const c = videoMem.has(g.key) ? { at: Date.now() } : await getCache(`video:${g.key}`);
-      if (c?.data) videoMem.set(g.key, c.data);
-      if ((!c || Date.now() - c.at >= 30 * DAY) && !videoTried.has(g.key)) todo.push(g);
-    }
-    refreshOverviews();
-    for (const g of todo) {
-      videoTried.add(g.key);
-      try { await (g.kind === 'col' ? cachedCollection(g.id) : cachedTv(g.id)); } catch { /* später nochmal */ }
-      refreshOverviews();
-    }
-  })().finally(() => {
-    videoLoading = null;
-    refreshOverviews();
-  });
-  return videoLoading;
-}
-
-function fillGapsDvd() {
-  const groups = videoGroups().filter((g) => g.kind !== 'single');
-  if (!groups.length) { $('#gap-list').innerHTML = emptyGaps('dvd'); return; }
-  const idx = getIndex();
-  const rows = groups.map((g) => {
-    const data = videoMem.get(g.key);
-    const base = { href: `#/luecken/${g.kind === 'col' ? 'reihe' : 'serie'}/${encodeURIComponent(g.id)}`, name: g.name, kind: g.kind };
-    if (!data) return { ...base, loading: true, failed: videoTried.has(g.key) && !videoLoading };
-    if (g.kind === 'col') {
-      const parts = released(data.parts);
-      return { ...base, owned: parts.filter((p) => idx.byVid.has(p.vid)).length, total: parts.length };
-    }
-    const have = new Set(g.items.flatMap((i) => i.seasons || []));
-    const seasons = data.seasons.filter((s) => !s.date || s.date <= today());
-    return { ...base, owned: seasons.filter((s) => have.has(s.number)).length, total: seasons.length };
-  });
-  const filt = (kind) => rows.filter((r) => r.kind === kind)
-    .filter((r) => state.gapFilter !== 'open' || r.loading || r.owned < r.total)
-    .sort((a, b) => collator.compare(sortName(a.name), sortName(b.name)));
-  const section = (title, list) => (list.length
-    ? `<h3 class="group-title">${title}</h3><div class="list">${list.map((r) => gapRow({ ...r, ic: r.kind === 'col' ? 'movie' : 'checklist' })).join('')}</div>` : '');
-  const a = filt('col');
-  const b = filt('tv');
-  $('#gap-list').innerHTML = `${section('Filmreihen', a)}${section('Serien', b)}
-    ${state.gapFilter === 'open' && !a.length && !b.length ? '<p class="empty-small">Alles komplett – stark!</p>' : ''}
-    <p class="tiny">Filmdaten: ${state.tmdbKey ? 'TMDB (diese App nutzt die TMDB-API, ist aber nicht von TMDB unterstützt oder zertifiziert)' : 'Wikidata und Wikipedia'}.</p>`;
-  if (rows.some((r) => r.loading && !r.failed)) preloadVideos();
-}
-
-// ---------- Interpret: welche Studioalben habe ich, welche fehlen? ----------
-async function renderArtist(mbid) {
-  const g = artistGroups().find((x) => x.mbid === mbid);
-  view().innerHTML = `${header(g?.name || 'Interpret', { back: true })}
-    <div id="detail-body"><p class="hint"><span class="spinner small"></span> Lade alle Alben …</p></div>`;
-  let disco;
-  try {
-    disco = await getDisco(mbid);
-  } catch (e) {
-    if (route()[2] === mbid && $('#detail-body')) {
-      $('#detail-body').innerHTML = `<p class="hint error">${esc(e.message)}</p><button class="btn" data-action="reload">${icon('refresh', 20)} Nochmal versuchen</button>`;
-    }
-    return;
-  }
-  if (route()[2] !== mbid || !$('#detail-body')) return;
-  state.current = { kind: 'artist', mbid, disco };
-  fillArtist();
-}
-
-function fillArtist() {
-  const { mbid, disco } = state.current;
-  const g = artistGroups().find((x) => x.mbid === mbid) || { mbid, name: '', items: [] };
-  state.current.g = g;
-  const list = studioAlbums(disco).map((a) => ({ a, item: ownedAlbum(a, mbid) }));
-  const owned = list.filter((x) => x.item).length;
-  const shown = state.albumFilter === 'missing' ? list.filter((x) => !x.item) : list;
-  const counted = new Set(list.filter((x) => x.item).map((x) => x.item.id));
-  const others = g.items.filter((i) => !counted.has(i.id));
-  $('#detail-body').innerHTML = `
-    ${progressHtml(owned, list.length, state.includeLive ? 'Alben' : 'Studioalben')}
-    <div class="chips">
-      <button class="chip ${state.albumFilter === 'all' ? 'on' : ''}" data-action="album-filter" data-f="all">Alle</button>
-      <button class="chip ${state.albumFilter === 'missing' ? 'on' : ''}" data-action="album-filter" data-f="missing">Fehlende</button>
-      <button class="chip ${state.includeLive ? 'on' : ''}" data-action="toggle-live">${state.includeLive ? `${icon('check', 14)} ` : '+ '}Live-Alben</button>
-    </div>
-    ${shown.length ? `<div class="grid cd">${shown.map(({ a, item }) => albumCard(a, item, g)).join('')}</div>`
-    : `<p class="empty-small">${list.length ? 'Du hast alle – Glückwunsch!' : 'MusicBrainz kennt keine Studioalben von diesem Interpreten.'}</p>`}
-    ${others.length ? `<h3 class="section">Weitere CDs${g.name ? ` von ${esc(g.name)}` : ''}</h3>
-      <p class="hint">Best-ofs, Live-Alben, Singles oder EPs aus deiner Sammlung – zählen nicht zu den Studioalben.</p>
-      <div class="grid cd">${others.slice().sort(byYear).map(cardHtml).join('')}</div>` : ''}
-    <p class="tiny">Daten: MusicBrainz. Fehlt ein Album oder ist eins zu viel? Die Daten pflegt die MusicBrainz-Community.</p>`;
-}
-
-function missingCard({ action, wishAction, key, o, wished, sub }) {
-  return `<div class="card missing">
-    <button class="card-hit" data-action="${action}" data-key="${esc(key)}">
-      ${coverHtml(o)}
-      <span class="card-title">${esc(o.title)}</span><span class="card-sub">${esc(sub)}</span>
-    </button>
-    <button class="heart ${wished ? 'on' : ''}" data-action="${wishAction}" data-key="${esc(key)}" aria-label="${wished ? 'Von der Wunschliste nehmen' : 'Auf die Wunschliste'}">${icon('heart', 18)}</button>
-  </div>`;
-}
-
-function ownedCard(item, o, sub) {
-  return `<button class="card" data-action="item" data-id="${item.id}">
-    ${coverHtml(o, '', `<span class="owned">${icon('check', 14)}</span>`)}
-    <span class="card-title">${esc(o.title)}</span><span class="card-sub">${esc(sub)}</span>
-  </button>`;
-}
-
-function albumCard(a, item, g) {
-  const o = { type: 'cd', title: a.title, artist: g.name, cover: item?.cover || a.cover };
-  if (item) return ownedCard(item, o, a.year);
-  return missingCard({ action: 'missing-album', wishAction: 'wish-album', key: a.mbid, o, wished: isWished(`mb:${a.mbid}`), sub: a.year });
-}
-
 const findAlbum = (key) => state.current?.disco?.find((a) => a.mbid === key);
-const albumAsMatch = (a) => {
-  const g = state.current.g;
-  return { type: 'cd', kind: 'album', mbid: a.mbid, title: a.title, artist: g.name, artistMbid: g.mbid, artistName: g.name, year: a.year, cover: a.cover };
-};
-
-function showMissing({ o, sub, wishAction, ownAction, key, wished, album = null }) {
-  const sheet = openSheet(`<div class="detail">
-    ${coverHtml({ ...o, cover: bigCover(o.cover) }, 'big')}
-    <h2>${esc(o.title)}</h2>
-    <p class="muted">${esc(sub)}</p>
-    ${album ? albumSectionHtml() : ''}
-    <div class="btn-col">
-      <button class="btn ${album ? '' : 'primary'}" data-action="${wishAction}" data-key="${esc(key)}">${icon('heart', 20)} ${wished ? 'Von der Wunschliste nehmen' : 'Auf die Wunschliste'}</button>
-      <button class="btn" data-action="${ownAction}" data-key="${esc(key)}">${icon('check', 20)} Hab ich doch – zur Sammlung</button>
-    </div>
-  </div>`);
-  if (album) fillAlbumSection(sheet, album);
-}
+const albumAsMatch = (a, g) => ({
+  type: 'cd', mbid: a.mbid, title: a.title, artist: g.name, artistMbid: g.mbid, artistName: g.name, year: a.year, cover: a.cover,
+});
 
 async function ownMatch(m) {
-  const it = itemFromMatch(await enrichVideo(m), 'hand');
+  const it = itemFromMatch(m, 'hand');
   await addItems([it]);
   toast(`„${it.title}“ ist jetzt in deiner Sammlung`);
 }
 
-// ---------- Filmreihe ----------
-async function renderCollection(id) {
-  const name = state.items.find((i) => i.collectionId === id)?.collectionName || 'Filmreihe';
-  view().innerHTML = `${header(name, { back: true })}
-    <div id="detail-body"><p class="hint"><span class="spinner small"></span> Lade die Filmreihe …</p></div>`;
-  let col;
-  try {
-    col = await cachedCollection(id);
-  } catch (e) {
-    if ($('#detail-body')) $('#detail-body').innerHTML = `<p class="hint error">${esc(e.message)}</p><button class="btn" data-action="reload">${icon('refresh', 20)} Nochmal versuchen</button>`;
-    return;
-  }
-  if (route()[2] !== id || !$('#detail-body')) return;
-  state.current = { kind: 'col', id, col };
-  setTitle(col.name || name);
-  fillCollection();
-}
-
-function fillCollection() {
-  const { col, id } = state.current;
-  const idx = getIndex();
-  const parts = released(col.parts).sort((a, b) => a.date.localeCompare(b.date))
-    .map((p) => ({ p, item: (idx.byVid.get(p.vid) || [])[0] }));
-  const owned = parts.filter((x) => x.item).length;
-  const counted = new Set(parts.filter((x) => x.item).map((x) => x.item.id));
-  const others = state.items.filter((i) => i.collectionId === id && !counted.has(i.id));
-  $('#detail-body').innerHTML = `
-    ${progressHtml(owned, parts.length, 'Filmen')}
-    <div class="grid dvd">${parts.map(({ p, item }) => {
-    const o = { type: 'dvd', title: p.title, cover: item?.cover || p.cover };
-    if (item) return ownedCard(item, o, p.year);
-    return missingCard({ action: 'missing-movie', wishAction: 'wish-movie', key: p.vid, o, wished: isWished(`movie:${p.vid}`), sub: p.year });
-  }).join('')}</div>
-    ${others.length ? `<h3 class="section">Weitere DVDs dieser Reihe</h3><div class="grid dvd">${others.map(cardHtml).join('')}</div>` : ''}
-    <p class="tiny">Filmdaten: ${video.sourceName(id)}</p>`;
-}
-
-const findPart = (key) => state.current?.col?.parts.find((p) => p.vid === key);
-const partAsMatch = (p) => ({
-  type: 'dvd', kind: 'movie', vid: p.vid, title: p.title, year: p.year, cover: p.cover,
-  collectionId: state.current.col.id, collectionName: state.current.col.name,
-});
-
-// ---------- Serie ----------
-async function renderSeries(id) {
-  const name = state.items.find((i) => i.kind === 'tv' && i.vid === id)?.title || 'Serie';
-  view().innerHTML = `${header(name, { back: true })}
-    <div id="detail-body"><p class="hint"><span class="spinner small"></span> Lade die Staffeln …</p></div>`;
-  let tv;
-  try {
-    tv = await cachedTv(id);
-  } catch (e) {
-    if ($('#detail-body')) $('#detail-body').innerHTML = `<p class="hint error">${esc(e.message)}</p><button class="btn" data-action="reload">${icon('refresh', 20)} Nochmal versuchen</button>`;
-    return;
-  }
-  if (route()[2] !== id || !$('#detail-body')) return;
-  state.current = { kind: 'tv', id, tv };
-  setTitle(tv.name || name);
-  fillSeries();
-}
-
-function fillSeries() {
-  const { tv, id } = state.current;
-  const owners = state.items.filter((i) => i.kind === 'tv' && i.vid === id);
-  const seasons = tv.seasons.filter((s) => !s.date || s.date <= today());
-  const ownerOf = (n) => owners.find((i) => (i.seasons || []).includes(n));
-  const owned = seasons.filter((s) => ownerOf(s.number)).length;
-  const unknown = owners.filter((i) => !(i.seasons || []).length);
-  $('#detail-body').innerHTML = `
-    ${progressHtml(owned, seasons.length, 'Staffeln')}
-    ${unknown.length ? '<p class="hint">Bei einer DVD dieser Serie ist nicht eingetragen, welche Staffel es ist. Tippe sie in der Sammlung an → „Treffer ändern“ → Staffeln eintragen.</p>' : ''}
-    <div class="grid dvd">${seasons.map((s) => {
-    const o = { type: 'dvd', title: s.name || `Staffel ${s.number}`, cover: s.cover };
-    const item = ownerOf(s.number);
-    if (item) return ownedCard(item, o, s.year);
-    return missingCard({ action: 'missing-season', wishAction: 'wish-season', key: String(s.number), o, wished: isWished(`tv:${id}:${s.number}`), sub: s.year });
-  }).join('')}</div>
-    ${unknown.length ? `<h3 class="section">DVDs ohne Staffelangabe</h3><div class="grid dvd">${unknown.map(cardHtml).join('')}</div>` : ''}
-    <p class="tiny">Filmdaten: ${video.sourceName(id)}</p>`;
-}
-
-const findSeason = (key) => state.current?.tv?.seasons.find((s) => String(s.number) === String(key));
-const seasonAsMatch = (s) => ({
-  type: 'dvd', kind: 'tv', vid: state.current.id, title: state.current.tv.name,
-  season: s.number, seasons: [s.number], year: s.year, cover: s.cover,
-});
-
+// Nach Änderungen die aktuelle Ansicht neu zeichnen (Blätter-Position bleibt erhalten)
 function refreshCurrent() {
   closeSheet();
-  const k = state.current?.kind;
-  if (k === 'artist' && $('#detail-body')) fillArtist();
-  else if (k === 'col' && $('#detail-body')) fillCollection();
-  else if (k === 'tv' && $('#detail-body')) fillSeries();
+  if (state.current?.kind === 'artist' && $('#detail-body')) fillArtist();
   else render();
 }
 
 // =====================================================================
-// 4) Wunschliste
+// 6) Wunschliste
 // =====================================================================
 function renderWishes() {
   const list = state.wishes.slice().sort((a, b) => b.addedAt - a.addedAt);
-  const section = (type, label) => {
-    const l = list.filter((w) => w.type === type);
-    return l.length ? `<h3 class="group-title">${label}</h3><div class="list">${l.map(wishRow).join('')}</div>` : '';
-  };
-  view().innerHTML = `${header('Wunschliste')}
-    ${list.length ? section('cd', 'CDs') + section('dvd', 'DVDs') : `<div class="empty">${icon('heart', 46)}
+  view().innerHTML = `${header('Wunschliste', { back: true })}
+    ${list.length ? `<div class="list">${list.map(wishRow).join('')}</div>` : `<div class="empty">${icon('heart', 46)}
       <h2>Noch keine Wünsche</h2>
-      <p>Unter „Lücken“ siehst du, welche Alben und Filme dir fehlen. Mit dem Herz landen sie hier.</p>
-      <a class="btn primary" href="#/luecken">Zu den Lücken</a></div>`}`;
+      <p>Bei jedem Interpreten siehst du, welche Alben dir fehlen. Mit dem Herz landen sie hier.</p></div>`}`;
 }
 
 function wishRow(w) {
-  const sub = w.type === 'cd'
-    ? [w.artist, w.year].filter(Boolean).join(' · ')
-    : [w.kind === 'tv' ? `Staffel ${w.season}` : 'Film', w.year].filter(Boolean).join(' · ');
   return `<div class="wish">
     ${coverHtml(w, 'thumb')}
-    <span class="row-text"><span class="row-title">${esc(w.title)}</span><span class="row-sub">${esc(sub)}</span></span>
-    <button class="btn small" data-action="wish-bought" data-key="${esc(w.id)}">${icon('cart', 18)} Gekauft</button>
+    <span class="row-text"><span class="row-title">${esc(w.title)}</span><span class="row-sub">${esc([w.artist, w.year].filter(Boolean).join(' · '))}</span></span>
+    <button class="btn small" data-action="wish-bought" data-key="${esc(w.id)}">Gekauft</button>
     <button class="icon-btn" data-action="wish-remove" data-key="${esc(w.id)}" aria-label="Von der Wunschliste nehmen">${icon('x', 20)}</button>
   </div>`;
 }
 
 // =====================================================================
-// 5) Einstellungen
+// 7) Einstellungen
 // =====================================================================
 async function renderSettings() {
-  const cds = state.items.filter((i) => i.type === 'cd').length;
-  const dvds = state.items.length - cds;
   const models = (await getSetting('geminiModels', null)) || [];
   const chosen = await getSetting('geminiModel', 'auto');
   const persisted = navigator.storage?.persisted ? await navigator.storage.persisted().catch(() => false) : false;
   const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   if (route()[0] !== 'einstellungen') return;
-  // Aufbau wie Apples Einstellungen-App: Gruppen mit Zeilen, graue Überschriften und Fußnoten
   const cellIc = (name) => `<span class="cell-ic">${icon(name, 18)}</span>`;
-  const chev = icon('chevron', 16, 'cell-chev');
   view().innerHTML = `
     ${header('Einstellungen', { back: true })}
 
@@ -1724,7 +1280,7 @@ async function renderSettings() {
         <select id="gem-model" class="cell-select">
           <option value="auto">Automatisch</option>
           ${models.map((m) => `<option value="${esc(m)}" ${chosen === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}
-        </select>${chev}
+        </select>${chev()}
       </label>
       <a class="cell" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">
         <span class="cell-label">Schlüssel bei Google holen</span>${icon('external', 16, 'cell-chev')}</a>
@@ -1732,22 +1288,7 @@ async function renderSettings() {
     <div id="gem-status" class="group-footer status-line"></div>
     <p class="group-footer">Kostenlos bei Google AI Studio: mit deinem Google-Konto anmelden, „API-Schlüssel erstellen“ tippen, kopieren und hier einfügen. Im Gratis-Kontingent darf Google die Fotos zur Verbesserung seiner KI nutzen – fotografiere also nur dein Regal.</p>
 
-    <h3 class="group-title">Filmdaten</h3>
-    <div class="group">
-      <div class="cell">${cellIc('movie')}<span class="cell-label">TMDB-Schlüssel</span>
-        <span class="cell-value" id="tmdb-badge">${state.tmdbKey ? 'Gespeichert' : 'Freiwillig'}</span></div>
-      <div class="cell input-cell">
-        <input id="tmdb-key" type="password" placeholder="Schlüssel einfügen" value="${esc(state.tmdbKey)}" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <button class="cell-icon-btn" data-action="toggle-key" data-for="tmdb-key" aria-label="Schlüssel anzeigen">${icon('eye', 20)}</button>
-      </div>
-      <button class="cell action" data-action="save-tmdb"><span class="cell-label">Speichern und prüfen</span></button>
-      <a class="cell" href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">
-        <span class="cell-label">Schlüssel bei TMDB holen</span>${icon('external', 16, 'cell-chev')}</a>
-    </div>
-    <div id="tmdb-status" class="group-footer status-line"></div>
-    <p class="group-footer">DVD-Cover, Filmreihen und Staffeln kommen auch ohne Schlüssel – kostenlos von Wikidata und Wikipedia. Mit TMDB gibt es oft deutsche Poster und mehr Filme.</p>
-
-    <h3 class="group-title">Checkliste</h3>
+    <h3 class="group-title">Lücken</h3>
     <div class="group">
       <label class="cell">${cellIc('checklist')}<span class="cell-label">Live-Alben mitzählen</span>
         <input type="checkbox" class="switch-input" id="opt-live" ${state.includeLive ? 'checked' : ''}><i class="switch"></i></label>
@@ -1757,16 +1298,15 @@ async function renderSettings() {
 
     <h3 class="group-title">Deine Daten</h3>
     <div class="group">
-      <div class="cell">${cellIc('disc')}<span class="cell-label">CDs</span><span class="cell-value">${cds}</span></div>
-      <div class="cell">${cellIc('movie')}<span class="cell-label">DVDs</span><span class="cell-value">${dvds}</span></div>
+      <div class="cell">${cellIc('disc')}<span class="cell-label">CDs</span><span class="cell-value">${state.items.length}</span></div>
       <div class="cell">${cellIc('heart')}<span class="cell-label">Wünsche</span><span class="cell-value">${state.wishes.length}</span></div>
     </div>
     <p class="group-footer">Alles wird nur hier in der App auf deinem iPhone gespeichert. ${persisted ? 'Der Speicher ist dauerhaft geschützt.' : (standalone ? '' : 'Tipp: Lege die App über „Teilen → Zum Home-Bildschirm“ ab, dann behält iOS die Daten dauerhaft.')}</p>
 
     <h3 class="group-title">Sicherung</h3>
     <div class="group">
-      <button class="cell action" data-action="export">${cellIc('download')}<span class="cell-label">Sicherung erstellen</span>${chev}</button>
-      <label class="cell action">${cellIc('upload')}<span class="cell-label">Sicherung laden</span>${chev}
+      <button class="cell action" data-action="export">${cellIc('download')}<span class="cell-label">Sicherung erstellen</span>${chev()}</button>
+      <label class="cell action">${cellIc('upload')}<span class="cell-label">Sicherung laden</span>${chev()}
         <input class="file-input" type="file" accept="application/json,.json" id="import-file"></label>
     </div>
     <p class="group-footer">Freiwillig. Löschst du das App-Symbol vom Home-Bildschirm, ist auch die Sammlung weg – eine Sicherung schützt davor.</p>
@@ -1775,7 +1315,7 @@ async function renderSettings() {
       <button class="cell action danger" data-action="clear-all"><span class="cell-label">Sammlung komplett löschen</span></button>
     </div>
 
-    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musik: MusicBrainz und Cover Art Archive · Filme: Wikidata, Wikipedia und TMDB (diese App nutzt die TMDB-API, ist aber nicht von TMDB unterstützt oder zertifiziert).</p>`;
+    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive</p>`;
   $('#gem-model').addEventListener('change', (e) => setSetting('geminiModel', e.target.value));
   $('#opt-live').addEventListener('change', async (e) => {
     state.includeLive = e.target.checked;
@@ -1816,29 +1356,9 @@ async function saveGemini() {
   }
 }
 
-async function saveTmdb() {
-  const key = $('#tmdb-key').value.trim();
-  const st = $('#tmdb-status');
-  if (!key) {
-    state.tmdbKey = '';
-    await setSetting('tmdbKey', '');
-    st.innerHTML = 'Schlüssel entfernt.';
-    return;
-  }
-  st.innerHTML = '<span class="spinner small"></span> Prüfe den Schlüssel …';
-  try {
-    await tmdb.testKey(key);
-    state.tmdbKey = key;
-    await setSetting('tmdbKey', key);
-    st.innerHTML = `<span class="ok">${icon('check', 16)} Funktioniert.</span>`;
-    $('#tmdb-badge').textContent = 'Gespeichert';
-  } catch (e) {
-    st.innerHTML = `<span class="error">${esc(e.message)}</span>`;
-  }
-}
-
 async function exportBackup() {
-  const data = { app: 'regal', version: 1, exportedAt: new Date().toISOString(), items: state.items, wishes: state.wishes };
+  const all = await db.all('items'); // auch alte DVD-Einträge mitsichern
+  const data = { app: 'regal', version: 1, exportedAt: new Date().toISOString(), items: all, wishes: state.wishes };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const name = `regal-sicherung-${today()}.json`;
   const file = new File([blob], name, { type: 'application/json' });
@@ -1868,44 +1388,46 @@ async function importBackup(file) {
     return;
   }
   if (data?.app !== 'regal' || !Array.isArray(data.items)) { toast('Diese Datei ist keine Regal-Sicherung.', 'error'); return; }
-  const have = new Set(state.items.map((i) => i.id));
+  const have = new Set((await db.all('items')).map((i) => i.id));
   const newItems = data.items.filter((i) => i && i.id && !have.has(i.id));
   const haveW = new Set(state.wishes.map((w) => w.id));
-  const newWishes = (data.wishes || []).filter((w) => w && w.id && !haveW.has(w.id));
-  state.items.push(...newItems);
-  state.wishes.push(...newWishes);
-  changed();
+  const newWishes = (data.wishes || []).filter((w) => w && w.id && w.type !== 'dvd' && !haveW.has(w.id));
   await db.putMany('items', newItems);
   await db.putMany('wishes', newWishes);
-  updateTabBadges();
-  toast(`${newItems.length} Einträge und ${newWishes.length} Wünsche geladen`);
+  state.items.push(...newItems.filter((i) => i.type === 'cd'));
+  state.wishes.push(...newWishes);
+  changed();
+  toast(`${newItems.filter((i) => i.type === 'cd').length} CDs und ${newWishes.length} Wünsche geladen`);
   render();
   preloadDiscographies();
 }
 
 async function clearAll() {
   if (!confirm('Wirklich die komplette Sammlung und Wunschliste löschen?')) return;
-  if (!confirm('Ganz sicher? Das kann nicht rückgängig gemacht werden. (Deine Schlüssel bleiben gespeichert.)')) return;
+  if (!confirm('Ganz sicher? Das kann nicht rückgängig gemacht werden. (Dein Schlüssel bleibt gespeichert.)')) return;
   await Promise.all([db.clear('items'), db.clear('wishes'), db.clear('cache')]);
   state.items = [];
   state.wishes = [];
   state.scan.rows = [];
   discoMem.clear();
   discoTried.clear();
-  videoTried.clear();
-  videoMem.clear();
+  albumMem.clear();
   changed();
-  updateTabBadges();
   toast('Alles gelöscht');
-  location.hash = '#/sammlung';
+  location.hash = '#/';
 }
 
 // =====================================================================
 // Klicks: alle Knöpfe mit data-action landen hier
 // =====================================================================
+const flowAlbum = (el) => {
+  const e = CF.entries[Number(el.dataset.i)];
+  return e && state.current?.g ? { e, g: state.current.g } : null;
+};
+
 const actions = {
-  'lib-tab': (el) => { state.libTab = el.dataset.tab; state.search = ''; renderLibrary(); },
   add: () => openAdd(),
+  'add-menu': () => openAddMenu(),
   item: (el) => showItem(el.dataset.id),
   rematch: (el) => rematchItem(el.dataset.id),
   delete: async (el) => {
@@ -1913,13 +1435,12 @@ const actions = {
     if (!it || !confirm(`„${it.title}“ aus der Sammlung löschen?`)) return;
     await deleteItem(it.id);
     toast('Gelöscht');
-    if (state.current) refreshCurrent(); else render();
+    refreshCurrent();
   },
   back: () => {
     if (history.length > 1) history.back();
-    else location.hash = route()[0] === 'luecken' ? '#/luecken' : '#/sammlung';
+    else location.hash = '#/';
   },
-  reload: () => render(),
 
   'row-toggle': (el) => {
     const r = state.scan.rows.find((x) => x.id === el.dataset.id);
@@ -1935,58 +1456,56 @@ const actions = {
     state.scan.rows = [];
     saveScan();
     renderReview();
-    updateTabBadges();
   },
 
-  'gap-tab': (el) => { state.gapTab = el.dataset.tab; renderGaps(); },
   'gap-filter': (el) => { state.gapFilter = el.dataset.f; renderGaps(); },
   'album-filter': (el) => { state.albumFilter = el.dataset.f; refreshCurrent(); },
   'toggle-live': async () => {
     state.includeLive = !state.includeLive;
     await setSetting('includeLive', state.includeLive);
-    if (state.current) refreshCurrent(); else renderGaps();
+    refreshCurrent();
   },
 
   'missing-album': (el) => {
     const a = findAlbum(el.dataset.key);
-    if (!a) return;
-    showMissing({
-      o: { type: 'cd', title: a.title, artist: state.current.g.name, cover: a.cover },
-      sub: [state.current.g.name, a.year, a.secondary.includes('Live') ? 'Live-Album' : 'Studioalbum'].filter(Boolean).join(' · '),
-      wishAction: 'wish-album', ownAction: 'own-album', key: a.mbid, wished: isWished(`mb:${a.mbid}`),
-      album: { mbid: a.mbid, artist: state.current.g.name, title: a.title },
-    });
+    if (a) showMissing(a, state.current.g);
   },
-  'wish-album': async (el) => { const a = findAlbum(el.dataset.key); if (a) { await toggleWish(albumAsMatch(a)); refreshCurrent(); } },
-  'own-album': async (el) => { const a = findAlbum(el.dataset.key); if (a) { await ownMatch(albumAsMatch(a)); refreshCurrent(); } },
+  'wish-album': async (el) => {
+    const a = findAlbum(el.dataset.key) || CF.entries.find((e) => e.album?.mbid === el.dataset.key)?.album;
+    const g = state.current?.g;
+    if (a && g) { await toggleWish(albumAsMatch(a, g)); refreshCurrent(); }
+  },
+  'own-album': async (el) => {
+    const a = findAlbum(el.dataset.key) || CF.entries.find((e) => e.album?.mbid === el.dataset.key)?.album;
+    const g = state.current?.g;
+    if (a && g) { await ownMatch(albumAsMatch(a, g)); refreshCurrent(); preloadDiscographies(); }
+  },
 
-  'missing-movie': (el) => {
-    const p = findPart(el.dataset.key);
-    if (!p) return;
-    showMissing({ o: { type: 'dvd', title: p.title, cover: p.cover }, sub: ['Film', p.year].filter(Boolean).join(' · '), wishAction: 'wish-movie', ownAction: 'own-movie', key: p.vid, wished: isWished(`movie:${p.vid}`) });
+  // Knöpfe auf der Rückseite eines umgedrehten Albums
+  'cf-more': (el) => {
+    const x = flowAlbum(el);
+    if (!x) return;
+    if (x.e.missing) showMissing(x.e.album, x.g);
+    else showItem(x.e.item.id);
   },
-  'wish-movie': async (el) => { const p = findPart(el.dataset.key); if (p) { await toggleWish(partAsMatch(p)); refreshCurrent(); } },
-  'own-movie': async (el) => { const p = findPart(el.dataset.key); if (p) { await ownMatch(partAsMatch(p)); refreshCurrent(); } },
-
-  'missing-season': (el) => {
-    const s = findSeason(el.dataset.key);
-    if (!s) return;
-    showMissing({ o: { type: 'dvd', title: s.name || `Staffel ${s.number}`, cover: s.cover }, sub: [state.current.tv.name, s.year].filter(Boolean).join(' · '), wishAction: 'wish-season', ownAction: 'own-season', key: String(s.number), wished: isWished(`tv:${state.current.id}:${s.number}`) });
+  'cf-wish': async (el) => {
+    const x = flowAlbum(el);
+    if (!x?.e.missing) return;
+    await toggleWish(albumAsMatch(x.e.album, x.g));
+    el.classList.toggle('on', isWished(`mb:${x.e.album.mbid}`));
   },
-  'wish-season': async (el) => { const s = findSeason(el.dataset.key); if (s) { await toggleWish(seasonAsMatch(s)); refreshCurrent(); } },
-  'own-season': async (el) => { const s = findSeason(el.dataset.key); if (s) { await ownMatch(seasonAsMatch(s)); refreshCurrent(); } },
 
   'wish-bought': async (el) => {
     const w = state.wishes.find((x) => x.id === el.dataset.key);
     if (!w) return;
-    await ownMatch({ ...w, seasons: w.season ? [w.season] : [] });
+    await ownMatch(w);
     await removeWish(w.id);
     renderWishes();
+    preloadDiscographies();
   },
   'wish-remove': async (el) => { await removeWish(el.dataset.key); renderWishes(); },
 
   'save-gemini': () => saveGemini(),
-  'save-tmdb': () => saveTmdb(),
   'toggle-key': (el) => { const inp = $(`#${el.dataset.for}`); inp.type = inp.type === 'password' ? 'text' : 'password'; },
   export: () => exportBackup(),
   'clear-all': () => clearAll(),
@@ -2019,23 +1538,14 @@ document.addEventListener('error', (e) => {
 // Start
 // =====================================================================
 async function init() {
-  renderTabbar();
   try {
-    [state.items, state.wishes] = await Promise.all([db.all('items'), db.all('wishes')]);
+    const [items, wishes] = await Promise.all([db.all('items'), db.all('wishes')]);
+    state.items = items.filter((i) => i.type === 'cd'); // DVDs gibt es in der App nicht mehr
+    state.wishes = wishes.filter((w) => w.type !== 'dvd');
     state.geminiKey = await getSetting('geminiKey', '');
-    state.tmdbKey = await getSetting('tmdbKey', '');
     state.includeLive = await getSetting('includeLive', false);
-    state.sortBy = { ...state.sortBy, ...(await getSetting('sortBy', {})) };
     const pending = await getCache('pendingScan');
-    if (Array.isArray(pending?.data)) state.scan.rows = pending.data;
-    // Alte Einträge (Version 1.0/1.1) auf das neue ID-Format umstellen
-    const old = state.items.filter((i) => i.type === 'dvd' && i.tmdbId && !i.vid);
-    for (const i of old) {
-      i.vid = `tmdb:${i.kind === 'tv' ? 'tv' : 'movie'}:${i.tmdbId}`;
-      if (i.collectionId && !String(i.collectionId).includes(':')) i.collectionId = `tmdb:col:${i.collectionId}`;
-      delete i.tmdbId;
-    }
-    if (old.length) await db.putMany('items', old);
+    if (Array.isArray(pending?.data)) state.scan.rows = pending.data.filter((r) => r.type !== 'dvd');
   } catch (e) {
     toast(`Der Speicher konnte nicht geöffnet werden: ${e.message}`, 'error');
   }
@@ -2049,7 +1559,6 @@ async function init() {
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('hashchange', () => requestAnimationFrame(onScroll));
   render();
-  updateTabBadges();
   if (state.scan.rows.some((r) => r.state === 'pending')) matchPending();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

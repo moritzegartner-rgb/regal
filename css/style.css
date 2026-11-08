@@ -629,6 +629,103 @@ button.cell:active, a.cell:active, label.cell.action:active { background: var(--
   .grid.dvd { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 }
 
+/* =========================================================
+   Titelliste und Spotify (wie in Apple Music)
+   ========================================================= */
+.navbar.compact .nav-title { opacity: 1; transform: none; }
+.album-extra { text-align: left; margin-top: 18px; }
+.album-actions { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.album-actions .btn { width: 100%; }
+.sub-link { font-size: 13px; letter-spacing: -0.08px; color: var(--muted); padding: 6px 0 2px; }
+.tracks-box { margin-top: 16px; }
+.tracks { list-style: none; margin: 0; padding: 0; }
+.tracks li {
+  position: relative; display: flex; align-items: baseline; gap: 12px;
+  padding: 11px 2px; font-size: 17px; letter-spacing: -0.43px;
+}
+.tracks li:not(:last-child)::after { content: ""; position: absolute; left: 34px; right: 0; bottom: 0; height: 0.5px; background: var(--sep); }
+.tracks .tn { width: 22px; flex: none; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tracks .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracks .td { flex: none; color: var(--muted); font-size: 15px; letter-spacing: -0.23px; font-variant-numeric: tabular-nums; }
+.disc-title { font-size: 13px; font-weight: 400; letter-spacing: -0.08px; text-transform: uppercase; color: var(--muted); margin: 18px 2px 4px; }
+.tracks-foot { font-size: 13px; letter-spacing: -0.08px; color: var(--muted); margin: 10px 2px 0; }
+
+/* =========================================================
+   Durchblättern – Alben in 3D wie früher auf dem iPod
+   ========================================================= */
+.cf-stage {
+  position: relative; margin: 0 -16px;
+  height: min(58vh, 520px);
+  perspective: 820px; perspective-origin: 50% 40%;
+  overflow: hidden; touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+.cf-item {
+  position: absolute; left: 50%; top: 40%;
+  width: var(--cf, 240px); height: var(--cf, 240px);
+  margin: calc(var(--cf, 240px) / -2) 0 0 calc(var(--cf, 240px) / -2);
+  transform-style: preserve-3d; will-change: transform; cursor: pointer;
+}
+.cf-card {
+  position: absolute; inset: 0; transform-style: preserve-3d;
+  transition: transform 0.7s cubic-bezier(0.3, 1.25, 0.4, 1);
+}
+.cf-item.flipped .cf-card { transform: rotateY(180deg) scale(var(--flip-scale, 1.12)); }
+.cf-front, .cf-back {
+  position: absolute; inset: 0;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden;
+}
+.cf-cover {
+  width: 100%; height: 100%; aspect-ratio: auto; border-radius: 3px;
+  box-shadow: none;
+  /* Spiegelung auf dem „Glasboden“, wie bei Cover Flow auf dem iPod */
+  -webkit-box-reflect: below 2px linear-gradient(transparent 62%, rgba(255, 255, 255, 0.26));
+}
+.cf-cover img { -webkit-user-drag: none; pointer-events: none; }
+.cf-cover .ph { font-size: 15px; padding: 12px; }
+.cf-back {
+  transform: rotateY(180deg);
+  display: flex; flex-direction: column;
+  border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(62, 62, 68, 0.92), rgba(28, 28, 30, 0.96));
+  box-shadow: inset 0 1px 0.5px rgba(255, 255, 255, 0.35), inset 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 20px 50px rgba(0, 0, 0, 0.6);
+  text-align: left; cursor: default;
+}
+.cf-back-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 14px; border-bottom: 0.5px solid var(--sep); }
+.cf-back-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cf-back-titles b { font-size: 15px; font-weight: 600; letter-spacing: -0.23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-back-titles span { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-play {
+  width: 40px; height: 40px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--glass-white); color: #000; padding-left: 3px;
+  box-shadow: inset 0 1px 0.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.cf-back-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; padding: 0 12px 10px 8px; }
+.cf-back-list .tracks li { padding: 7px 0; font-size: 13px; letter-spacing: -0.08px; gap: 8px; }
+.cf-back-list .tracks li:not(:last-child)::after { left: 26px; }
+.cf-back-list .tracks .tn { width: 18px; }
+.cf-back-list .tracks .td { font-size: 12px; }
+.cf-back-list .disc-title { font-size: 11px; margin: 10px 0 2px 26px; }
+.cf-back-list .tracks-foot { font-size: 11px; margin: 6px 0 0 26px; }
+.cf-back-list .hint { padding: 12px 6px; }
+.cf-info { text-align: center; margin-top: 4px; min-height: 48px; }
+.cf-title { font-size: 17px; font-weight: 600; letter-spacing: -0.43px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-sub { font-size: 15px; letter-spacing: -0.23px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cf-hint { text-align: center; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); margin-top: 10px; }
+/* Schieberegler wie bei iOS */
+.cf-scrub {
+  -webkit-appearance: none; appearance: none; display: block;
+  width: min(100%, 420px); height: 28px; margin: 14px auto 0; background: none;
+}
+.cf-scrub::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--fill-3); }
+.cf-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 26px; margin-top: -11px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.cf-scrub::-moz-range-track { height: 4px; border-radius: 2px; background: var(--fill-3); }
+.cf-scrub::-moz-range-thumb { width: 26px; height: 26px; border: 0; border-radius: 50%; background: #fff; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

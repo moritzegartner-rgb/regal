@@ -61,6 +61,8 @@ const ICONS = {
   cart: '<circle cx="6" cy="19" r="2"/><circle cx="17" cy="19" r="2"/><path d="M17 17h-11v-14h-2M6 5l14 1l-1 7h-13"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="M10.85 12.15l9.15 -9.15M18 5l2 2M15 8l2 2"/>',
   eye: '<path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/>',
+  play: '<path d="M7 4v16l13 -8z" fill="currentColor"/>',
+  flow: '<rect x="8" y="5" width="8" height="14" rx="1"/><path d="M5 7l-2 1v8l2 1M19 7l2 1v8l-2 1"/>',
 };
 
 export function icon(name, size = 22, cls = '') {

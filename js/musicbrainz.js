@@ -90,6 +90,48 @@ export function pickBest(list, artist, title) {
   return { ...best, sure: bestScore >= 150 };
 }
 
+// Titelliste und Spotify-Link eines Albums (Release-Group)
+// Titel: von der „normalsten“ CD-Ausgabe (häufigste Titelzahl, deutsche/europäische Ausgabe bevorzugt)
+// Spotify: Link, den die MusicBrainz-Community bei einer Digital-Ausgabe hinterlegt hat
+export async function albumDetails(rgid) {
+  let d = await mbFetch(`/release?release-group=${rgid}&status=official&inc=media+url-rels&limit=100`);
+  let rels = d.releases || [];
+  if (!rels.length) {
+    d = await mbFetch(`/release?release-group=${rgid}&inc=media+url-rels&limit=100`);
+    rels = d.releases || [];
+  }
+  if (!rels.length) return { discs: [], spotify: null };
+  const total = (r) => (r.media || []).reduce((s, m) => s + (m['track-count'] || 0), 0);
+  const isCd = (r) => (r.media || []).length > 0 && r.media.every((m) => /CD/i.test(m.format || '') && !/CD-R\b/i.test(m.format || ''));
+  let pool = rels.filter(isCd);
+  if (!pool.length) pool = rels;
+  const counts = {};
+  pool.forEach((r) => { counts[total(r)] = (counts[total(r)] || 0) + 1; });
+  const mode = Number(Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]);
+  const countries = ['DE', 'XE', 'AT', 'CH', 'GB', 'US', 'XW'];
+  const rank = (r) => { const i = countries.indexOf(r.country); return i < 0 ? 99 : i; };
+  const best = pool.filter((r) => total(r) === mode)
+    .sort((a, b) => rank(a) - rank(b) || (a.date || '9999').localeCompare(b.date || '9999'))[0];
+
+  const spotify = [];
+  for (const r of rels) {
+    for (const rel of r.relations || []) {
+      const m = /open\.spotify\.com\/album\/([A-Za-z0-9]+)/.exec(rel.url?.resource || '');
+      if (m) spotify.push({ id: m[1], multi: (r.media || []).length > 1, diff: Math.abs(total(r) - mode), date: r.date || '9999' });
+    }
+  }
+  spotify.sort((a, b) => a.multi - b.multi || a.diff - b.diff || a.date.localeCompare(b.date));
+
+  const full = await mbFetch(`/release/${best.id}?inc=recordings`);
+  const discs = (full.media || []).map((m, i) => ({
+    n: m.position || i + 1,
+    format: m.format || '',
+    title: m.title || '',
+    tracks: (m.tracks || []).map((t) => ({ n: t.number || String(t.position), title: t.title, ms: t.length || t.recording?.length || 0 })),
+  }));
+  return { releaseId: best.id, discs, spotify: spotify[0]?.id || null };
+}
+
 // Alle Alben eines Interpreten (offizielle Veröffentlichungen)
 export async function artistAlbums(artistMbid) {
   const out = [];

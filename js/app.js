@@ -7,7 +7,7 @@ import * as video from './video.js';
 import * as gemini from './gemini.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -252,13 +252,13 @@ function cardHtml(it) {
 
 // Kopfzeile wie in iOS 26: schwebende Glas-Knöpfe oben, großer Titel darunter,
 // beim Scrollen erscheint ein kleiner Titel in der Mitte
-function header(title, { back = false, actions = '' } = {}) {
-  return `<div class="navbar">
+function header(title, { back = false, actions = '', compact = false } = {}) {
+  return `<div class="navbar ${compact ? 'compact' : ''}">
     <div class="nav-side">${back ? `<button class="glass-btn round" data-action="back" aria-label="Zurück">${icon('back', 24)}</button>` : ''}</div>
     <div class="nav-title">${esc(title)}</div>
     <div class="nav-side right">${actions ? `<div class="glass-group">${actions}</div>` : ''}</div>
   </div>
-  <h1 class="large-title">${esc(title)}</h1>`;
+  ${compact ? '' : `<h1 class="large-title">${esc(title)}</h1>`}`;
 }
 
 function setTitle(text) {
@@ -314,6 +314,7 @@ function render() {
     else if (sub === 'gruppe') renderNameGroup(id);
     else if (sub === 'reihe') renderCollection(id);
     else if (sub === 'serie') renderSeries(id);
+    else if (sub === 'blaettern') renderCoverFlow();
     else if (page === 'sammlung') renderLibrary();
     else renderGaps();
   } else if (page === 'scan') renderScan();
@@ -372,7 +373,8 @@ function renderLibrary() {
   const curSort = state.sortBy[state.libTab];
   view().innerHTML = `
     ${header('Deine Sammlung', {
-    actions: `<button class="icon-btn" data-action="add" aria-label="Von Hand hinzufügen">${icon('plus', 24)}</button>
+    actions: `<a class="icon-btn" href="#/sammlung/blaettern" aria-label="Alben durchblättern">${icon('flow', 24)}</a>
+      <button class="icon-btn" data-action="add" aria-label="Von Hand hinzufügen">${icon('plus', 24)}</button>
       <a class="icon-btn" href="#/einstellungen" aria-label="Einstellungen">${icon('settings', 22)}</a>`,
   })}
     ${segHtml('lib', 'lib-tab', [['cd', `CDs <b>${cds}</b>`], ['dvd', `DVDs <b>${dvds}</b>`]], state.libTab)}
@@ -594,11 +596,12 @@ function showItem(id) {
   if (it.kind === 'tv' && it.vid && !(here?.kind === 'tv' && here.id === it.vid)) {
     links.push(`<a class="btn" href="#/sammlung/serie/${encodeURIComponent(it.vid)}">${icon('movie', 20)} Alle Staffeln</a>`);
   }
-  openSheet(`<div class="detail">
+  const sheet = openSheet(`<div class="detail">
     ${coverHtml({ ...it, cover: bigCover(it.cover) }, 'big')}
     <h2>${esc(it.title)}</h2>
     <p class="muted">${esc(meta.filter(Boolean).join(' · '))}</p>
     ${!it.mbid && !it.vid ? '<p class="hint">Ohne Datenbank-Treffer gespeichert. Mit „Treffer ändern“ findest du Cover und Infos.</p>' : ''}
+    ${it.type === 'cd' ? albumSectionHtml() : ''}
     <div class="btn-col">
       ${links.join('')}
       <button class="btn" data-action="rematch" data-id="${it.id}">${icon('edit', 20)} Treffer ändern</button>
@@ -606,7 +609,258 @@ function showItem(id) {
     </div>
     <p class="tiny">Hinzugefügt am ${new Date(it.addedAt).toLocaleDateString('de-DE')}${it.source === 'foto' ? ' per Foto' : ''}</p>
   </div>`);
+  if (it.type === 'cd') fillAlbumSection(sheet, it);
 }
+
+// ---------- Titelliste und Spotify ----------
+const albumMem = new Map();
+
+async function loadAlbumDetails(mbid) {
+  if (!mbid) return null;
+  if (albumMem.has(mbid)) return albumMem.get(mbid);
+  const c = await getCache(`mb:album:${mbid}`);
+  if (c && Date.now() - c.at < 90 * DAY) { albumMem.set(mbid, c.data); return c.data; }
+  try {
+    const d = await mb.albumDetails(mbid);
+    await setCache(`mb:album:${mbid}`, d);
+    albumMem.set(mbid, d);
+    return d;
+  } catch (e) {
+    if (c) return c.data;
+    throw e;
+  }
+}
+
+// Direkt zum Album, wenn MusicBrainz den Spotify-Link kennt – sonst Spotify-Suche
+function spotifyLinks(artist, title, spotifyId) {
+  const q = encodeURIComponent(`${artist || ''} ${title || ''}`.trim());
+  return spotifyId
+    ? { exact: true, app: `spotify:album:${spotifyId}`, web: `https://open.spotify.com/album/${spotifyId}` }
+    : { exact: false, app: `spotify:search:${q}`, web: `https://open.spotify.com/search/${q}` };
+}
+
+const fmtDur = (ms) => {
+  if (!ms) return '';
+  const s = Math.round(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+function tracksHtml(det) {
+  const discs = det?.discs || [];
+  const all = discs.flatMap((d) => d.tracks);
+  if (!all.length) return '<p class="hint">Keine Titelliste gefunden.</p>';
+  const multi = discs.length > 1;
+  const total = all.reduce((s, t) => s + (t.ms || 0), 0);
+  return discs.map((d) => `
+    ${multi ? `<h4 class="disc-title">${/CD/i.test(d.format) ? 'CD' : 'Disc'} ${d.n}${d.title ? ` – ${esc(d.title)}` : ''}</h4>` : ''}
+    <ol class="tracks">${d.tracks.map((t) => `<li><span class="tn">${esc(t.n)}</span><span class="tt">${esc(t.title)}</span><span class="td">${fmtDur(t.ms)}</span></li>`).join('')}</ol>`).join('')
+    + `<p class="tracks-foot">${all.length} Titel${total ? `, ${Math.round(total / 60000)} Minuten` : ''}</p>`;
+}
+
+function albumSectionHtml() {
+  return `<div class="album-extra">
+    <div class="album-actions"></div>
+    <div class="tracks-box"><p class="hint"><span class="spinner small"></span> Titelliste wird geladen …</p></div>
+  </div>`;
+}
+
+async function fillAlbumSection(root, a) {
+  const actions = root.querySelector('.album-actions');
+  const box = root.querySelector('.tracks-box');
+  if (!actions || !box) return;
+  const showLinks = (spotifyId) => {
+    const l = spotifyLinks(a.artist, a.title, spotifyId);
+    actions.innerHTML = `<a class="btn primary" href="${esc(l.app)}">${icon('play', 18)} In Spotify öffnen</a>
+      <a class="sub-link" href="${esc(l.web)}" target="_blank" rel="noopener">${l.exact ? 'Spotify im Browser öffnen' : 'Kein direkter Link – öffnet die Spotify-Suche'}</a>`;
+  };
+  showLinks(null);
+  if (!a.mbid) { box.innerHTML = '<p class="hint">Keine Titelliste – ordne das Album über „Treffer ändern“ zu.</p>'; return; }
+  try {
+    const det = await loadAlbumDetails(a.mbid);
+    if (!root.isConnected) return;
+    showLinks(det?.spotify);
+    box.innerHTML = tracksHtml(det);
+  } catch (e) {
+    if (root.isConnected) box.innerHTML = `<p class="hint error">${esc(e.message)}</p>`;
+  }
+}
+
+// =====================================================================
+// Durchblättern: Alben-Galerie wie früher auf dem iPod
+// =====================================================================
+const CF = { items: [], els: [], pos: 0, target: 0, size: 240, raf: 0, flipped: -1, shown: -1 };
+
+function renderCoverFlow() {
+  const items = state.items.filter((i) => i.type === 'cd').sort((a, b) => collator.compare(sortName(a.artist), sortName(b.artist))
+    || (a.year || '').localeCompare(b.year || '') || collator.compare(a.title, b.title));
+  CF.items = items;
+  CF.flipped = -1;
+  CF.shown = -1;
+  view().innerHTML = `${header('Durchblättern', { back: true, compact: true })}
+    ${items.length ? `
+    <div class="cf-stage" id="cf-stage">
+      ${items.map((it, i) => `<div class="cf-item" data-i="${i}">
+        <div class="cf-card">
+          <div class="cf-front"><div class="cover cf-cover" style="--h:${hue(it.title + it.artist)}">
+            <span class="ph">${esc(it.title)}</span>${it.cover ? `<img data-src="${esc(it.cover.replace('/front-250', '/front-500'))}" alt="" draggable="false">` : ''}
+          </div></div>
+          <div class="cf-back"></div>
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="cf-info"><div class="cf-title"></div><div class="cf-sub"></div></div>
+    <input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${items.length - 1}" step="1" value="0" aria-label="Schnell blättern">
+    <p class="cf-hint">Wischen zum Blättern · Album antippen zum Umdrehen</p>`
+    : `<div class="empty">${icon('disc', 46)}<h2>Noch keine CDs</h2><p>Sobald du CDs in der Sammlung hast, kannst du hier durch deine Alben blättern.</p></div>`}`;
+  if (!items.length) return;
+  CF.els = [...document.querySelectorAll('.cf-item')];
+  // dort weitermachen, wo man zuletzt war
+  const keep = Math.min(Math.round(CF.target || 0), items.length - 1);
+  CF.pos = keep;
+  CF.target = keep;
+  cfBind();
+  cfLayout();
+}
+
+function cfLayout() {
+  const stage = $('#cf-stage');
+  if (!stage) return false;
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  CF.size = Math.round(Math.min(w * 0.6, h * 0.62, 340));
+  stage.style.setProperty('--cf', `${CF.size}px`);
+  const s = CF.size;
+  CF.els.forEach((el, i) => {
+    const d = i - CF.pos;
+    const ad = Math.abs(d);
+    if (ad > 8) { el.style.visibility = 'hidden'; return; }
+    el.style.visibility = 'visible';
+    const img = el.querySelector('img[data-src]');
+    if (img) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+    const sign = Math.sign(d);
+    const t = Math.min(ad, 1);
+    const x = ad <= 1 ? d * s * 0.6 : sign * (s * 0.6 + (ad - 1) * s * 0.2);
+    const rot = -sign * t * 64;
+    const z = -t * s * 0.6;
+    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${rot.toFixed(2)}deg)`;
+    el.style.zIndex = String(1000 - Math.round(ad * 10));
+  });
+  const cur = Math.max(0, Math.min(CF.items.length - 1, Math.round(CF.pos)));
+  if (cur !== CF.shown) {
+    CF.shown = cur;
+    const it = CF.items[cur];
+    $('.cf-title').textContent = it.title;
+    $('.cf-sub').textContent = [it.artist, it.year].filter(Boolean).join(' · ');
+    const scrub = $('#cf-scrub');
+    if (scrub && document.activeElement !== scrub) scrub.value = cur;
+    if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
+  }
+  return true;
+}
+
+function cfAnimate() {
+  cancelAnimationFrame(CF.raf);
+  const step = () => {
+    const diff = CF.target - CF.pos;
+    if (Math.abs(diff) < 0.002) { CF.pos = CF.target; cfLayout(); return; }
+    CF.pos += diff * 0.16;
+    if (cfLayout()) CF.raf = requestAnimationFrame(step);
+  };
+  CF.raf = requestAnimationFrame(step);
+}
+
+function cfGo(i) {
+  CF.target = Math.max(0, Math.min(CF.items.length - 1, i));
+  cfAnimate();
+}
+
+function cfUnflip() {
+  if (CF.flipped < 0) return;
+  CF.els[CF.flipped]?.classList.remove('flipped');
+  CF.flipped = -1;
+}
+
+function cfBackHtml(it, det, err) {
+  const l = spotifyLinks(it.artist, it.title, det?.spotify);
+  let list = '<p class="hint"><span class="spinner small"></span> Lade Titel …</p>';
+  if (det) list = tracksHtml(det);
+  else if (err) list = `<p class="hint">${esc(err)}</p>`;
+  return `<div class="cf-back-head">
+      <div class="cf-back-titles"><b>${esc(it.title)}</b><span>${esc(it.artist)}</span></div>
+      <a class="cf-play" href="${esc(l.app)}" aria-label="In Spotify öffnen">${icon('play', 20)}</a>
+    </div>
+    <div class="cf-back-list">${list}</div>`;
+}
+
+async function cfFlip(i) {
+  if (CF.flipped === i) { cfUnflip(); return; }
+  cfUnflip();
+  const el = CF.els[i];
+  const it = CF.items[i];
+  const back = el.querySelector('.cf-back');
+  back.innerHTML = cfBackHtml(it, null, it.mbid ? null : 'Keine Titelliste – ordne das Album über „Treffer ändern“ zu.');
+  // Umgedreht fast bildschirmbreit, damit die Titel gut lesbar sind
+  const stage = $('#cf-stage');
+  stage.style.setProperty('--flip-scale', Math.max(1.05, Math.min((stage.clientWidth - 32) / CF.size, 1.45)).toFixed(3));
+  el.classList.add('flipped');
+  CF.flipped = i;
+  if (!it.mbid) return;
+  try {
+    const det = await loadAlbumDetails(it.mbid);
+    if (CF.flipped === i) back.innerHTML = cfBackHtml(it, det);
+  } catch (e) {
+    if (CF.flipped === i) back.innerHTML = cfBackHtml(it, null, e.message);
+  }
+}
+
+function cfBind() {
+  const stage = $('#cf-stage');
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.cf-back-titles')) { cfUnflip(); return; } // Titel antippen = zurückdrehen
+    if (e.target.closest('.cf-back')) return; // Titelliste darf scrollen, Spotify-Knopf klicken
+    cancelAnimationFrame(CF.raf);
+    drag = { x: e.clientX, pos: CF.pos, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.cf-item') };
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 6) drag.moved = true;
+    const spacing = CF.size * 0.32;
+    CF.pos = Math.max(-0.4, Math.min(CF.items.length - 0.6, drag.pos - dx / spacing));
+    const now = performance.now();
+    const dt = Math.max(1, now - drag.lastT);
+    drag.vel = drag.vel * 0.6 + (-(e.clientX - drag.lastX) / spacing / dt * 1000) * 0.4;
+    drag.lastX = e.clientX;
+    drag.lastT = now;
+    cfLayout();
+  });
+  const end = () => {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) {
+      const i = d.item ? Number(d.item.dataset.i) : Math.round(CF.pos);
+      if (i === Math.round(CF.target) && Math.abs(CF.pos - i) < 0.3) cfFlip(i);
+      else cfGo(i);
+      return;
+    }
+    cfGo(Math.round(CF.pos + Math.max(-8, Math.min(8, d.vel * 0.22))));
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  const scrub = $('#cf-scrub');
+  scrub.addEventListener('input', () => cfGo(Number(scrub.value)));
+}
+
+window.addEventListener('resize', () => { if ($('#cf-stage')) cfLayout(); });
+document.addEventListener('keydown', (e) => {
+  if (!$('#cf-stage') || document.activeElement?.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') cfGo(Math.round(CF.target) + 1);
+  if (e.key === 'ArrowLeft') cfGo(Math.round(CF.target) - 1);
+  if (e.key === 'Enter') cfFlip(Math.round(CF.target));
+});
 
 function rematchItem(id) {
   const it = state.items.find((i) => i.id === id);
@@ -1296,16 +1550,18 @@ const albumAsMatch = (a) => {
   return { type: 'cd', kind: 'album', mbid: a.mbid, title: a.title, artist: g.name, artistMbid: g.mbid, artistName: g.name, year: a.year, cover: a.cover };
 };
 
-function showMissing({ o, sub, wishAction, ownAction, key, wished }) {
-  openSheet(`<div class="detail">
+function showMissing({ o, sub, wishAction, ownAction, key, wished, album = null }) {
+  const sheet = openSheet(`<div class="detail">
     ${coverHtml({ ...o, cover: bigCover(o.cover) }, 'big')}
     <h2>${esc(o.title)}</h2>
     <p class="muted">${esc(sub)}</p>
+    ${album ? albumSectionHtml() : ''}
     <div class="btn-col">
-      <button class="btn primary" data-action="${wishAction}" data-key="${esc(key)}">${icon('heart', 20)} ${wished ? 'Von der Wunschliste nehmen' : 'Auf die Wunschliste'}</button>
+      <button class="btn ${album ? '' : 'primary'}" data-action="${wishAction}" data-key="${esc(key)}">${icon('heart', 20)} ${wished ? 'Von der Wunschliste nehmen' : 'Auf die Wunschliste'}</button>
       <button class="btn" data-action="${ownAction}" data-key="${esc(key)}">${icon('check', 20)} Hab ich doch – zur Sammlung</button>
     </div>
   </div>`);
+  if (album) fillAlbumSection(sheet, album);
 }
 
 async function ownMatch(m) {
@@ -1698,6 +1954,7 @@ const actions = {
       o: { type: 'cd', title: a.title, artist: state.current.g.name, cover: a.cover },
       sub: [state.current.g.name, a.year, a.secondary.includes('Live') ? 'Live-Album' : 'Studioalbum'].filter(Boolean).join(' · '),
       wishAction: 'wish-album', ownAction: 'own-album', key: a.mbid, wished: isWished(`mb:${a.mbid}`),
+      album: { mbid: a.mbid, artist: state.current.g.name, title: a.title },
     });
   },
   'wish-album': async (el) => { const a = findAlbum(el.dataset.key); if (a) { await toggleWish(albumAsMatch(a)); refreshCurrent(); } },

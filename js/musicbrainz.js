@@ -132,6 +132,16 @@ export async function albumDetails(rgid) {
   return { releaseId: best.id, discs, spotify: spotify[0]?.id || null };
 }
 
+// Spotify-ID eines Interpreten aus den MusicBrainz-Verknüpfungen
+export async function artistSpotifyId(artistMbid) {
+  const d = await mbFetch(`/artist/${artistMbid}?inc=url-rels`);
+  for (const r of d.relations || []) {
+    const m = /open\.spotify\.com\/artist\/([A-Za-z0-9]+)/.exec(r.url?.resource || '');
+    if (m) return m[1];
+  }
+  return '';
+}
+
 // Alle Alben eines Interpreten (offizielle Veröffentlichungen)
 export async function artistAlbums(artistMbid) {
   const out = [];

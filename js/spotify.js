@@ -171,6 +171,32 @@ export async function albumTracks(id) {
   return (await api('GET', `/albums/${id}/tracks?limit=50`))?.items || [];
 }
 
+// ---------- Steuerung (Play/Pause, vor, zurück) ----------
+const dev = (id) => (id ? `?device_id=${encodeURIComponent(id)}` : '');
+export const playerState = () => api('GET', '/me/player'); // null, wenn gerade nichts aktiv ist
+export const pause = (deviceId) => api('PUT', `/me/player/pause${dev(deviceId)}`);
+export const resume = (deviceId) => api('PUT', `/me/player/play${dev(deviceId)}`);
+export const next = (deviceId) => api('POST', `/me/player/next${dev(deviceId)}`);
+export const previous = (deviceId) => api('POST', `/me/player/previous${dev(deviceId)}`);
+
+// ---------- Profilbild eines Interpreten ----------
+// Spotify-ID von MusicBrainz (sicherer Treffer) oder Suche nach dem Namen
+export async function artistImage({ spotifyId, name }) {
+  let a = null;
+  if (spotifyId) {
+    try { a = await api('GET', `/artists/${spotifyId}`); } catch (e) { if (e instanceof NotConnected) throw e; }
+  }
+  if (!a && name) {
+    const d = await api('GET', `/search?type=artist&limit=5&q=${encodeURIComponent(name)}`);
+    const n = norm(name);
+    a = (d?.artists?.items || []).find((x) => norm(x.name) === n) || null;
+  }
+  const imgs = (a?.images || []).slice().sort((x, y) => (x.width || 0) - (y.width || 0));
+  if (!imgs.length) return { id: a?.id || '', img: '', big: '' };
+  const mid = imgs.find((i) => (i.width || 0) >= 300) || imgs[imgs.length - 1];
+  return { id: a.id, img: mid.url, big: imgs[imgs.length - 1].url };
+}
+
 export async function play({ deviceId, contextUri, offset }) {
   await api('PUT', `/me/player/play${deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : ''}`, {
     context_uri: contextUri, ...(offset ? { offset } : {}),

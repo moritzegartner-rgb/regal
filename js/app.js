@@ -4,11 +4,10 @@
 import { db, getSetting, setSetting, getCache, setCache } from './db.js';
 import * as mb from './musicbrainz.js';
 import * as gemini from './gemini.js';
-import * as art from './artistart.js';
 import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -264,16 +263,17 @@ const CF = {
 const CF_WINDOW = 6; // so viele Cover links und rechts werden gezeichnet
 
 function artistEntries() {
-  return libraryGroups().map((g) => ({
-    key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), logo: artMem.get(g.key)?.logo || '', group: g,
-  }));
+  return libraryGroups().map((g) => {
+    const pic = artMem.get(g.key) || {};
+    return { key: g.key, title: g.name, sub: groupSub(g), cover: groupCover(g), img: pic.img || '', big: pic.big || '', group: g };
+  });
 }
 
-// Vorderseite eines Covers. Interpreten: Logo (Schriftzug) auf dunkler Karte, sonst der Name als Schriftzug.
+// Vorderseite eines Covers. Interpreten: Profilbild von Spotify, sonst der Name als Schriftzug.
 function cfFaceHtml(e) {
   if (CF.level === 'artists') {
-    return e.logo
-      ? `<div class="cover cf-cover artist-card"><img class="artist-logo" data-src="${esc(art.small(e.logo))}" alt="" draggable="false"></div>`
+    return e.img
+      ? `<div class="cover cf-cover artist-photo"><img data-src="${esc(e.img)}" data-big="${esc(e.big)}" alt="" draggable="false"></div>`
       : `<div class="cover cf-cover artist-card text"><span class="artist-name">${esc(e.title)}</span></div>`;
   }
   return `<div class="cover cf-cover" style="--h:${hue(e.title)}">
@@ -288,14 +288,15 @@ function cfFrontHtml(e) {
   return `${face}<div class="cf-reflect" aria-hidden="true"><div class="cf-reflect-inner">${face}</div></div>`;
 }
 
-// Logo nachträglich eingetroffen: nur dieses Cover austauschen (kein Springen)
+// Profilbild nachträglich eingetroffen: nur dieses Cover austauschen (kein Springen)
 function cfRefreshArtist(key) {
   if (CF.level !== 'artists' || !$('#cf-stage')) return;
   const i = CF.entries.findIndex((e) => e.key === key);
   if (i < 0) return;
-  const logo = artMem.get(key)?.logo || '';
-  if (logo === CF.entries[i].logo) return;
-  CF.entries[i].logo = logo;
+  const pic = artMem.get(key) || {};
+  if ((pic.img || '') === CF.entries[i].img) return;
+  CF.entries[i].img = pic.img || '';
+  CF.entries[i].big = pic.big || '';
   const front = CF.els[i]?.querySelector('.cf-front');
   if (front) front.innerHTML = cfFrontHtml(CF.entries[i]);
   cfLayout();
@@ -342,7 +343,7 @@ function renderFlow(level, key = '') {
   }
 
   view().innerHTML = `${nav}
-    <div class="cf-stage" id="cf-stage">
+    <div class="cf-stage ${spConnected ? 'with-np' : ''}" id="cf-stage">
       ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
         <div class="cf-card">
           <div class="cf-front">${cfFrontHtml(e)}</div>
@@ -351,7 +352,9 @@ function renderFlow(level, key = '') {
       </div>`).join('')}
     </div>
     <div class="cf-info"><div class="cf-title"></div><div class="cf-sub"></div></div>
-    ${entries.length > 1 ? `<input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${entries.length - 1}" step="1" value="0" aria-label="Schnell blättern">` : ''}`;
+    ${entries.length > 1 ? `<input class="cf-scrub" id="cf-scrub" type="range" min="0" max="${entries.length - 1}" step="1" value="0" aria-label="Schnell blättern">` : ''}
+    ${spConnected ? npHtml() : ''}`;
+  if (spConnected) npTick();
   CF.els = [...document.querySelectorAll('.cf-item')];
   // dort weitermachen, wo man zuletzt war
   const memKey = `${level}:${key}`;
@@ -421,8 +424,9 @@ function cfSettle() {
     if (!e || !$('#cf-stage')) return;
     CF.mem[`${CF.level}:${CF.key}`] = e.key;
     const img = CF.els[cur]?.querySelector('.cf-front > .cf-cover img');
-    if (img && /(\/front-250|\/small)$/.test(img.dataset.src || '') && img.hasAttribute('src')) {
-      const hi = img.dataset.src.replace(/\/front-250$/, '/front-500').replace(/\/small$/, '/medium');
+    const hiSrc = img?.dataset.big || (/\/front-250$/.test(img?.dataset.src || '') ? img.dataset.src.replace(/\/front-250$/, '/front-500') : '');
+    if (img && hiSrc && hiSrc !== img.getAttribute('src') && img.hasAttribute('src')) {
+      const hi = hiSrc;
       const probe = new Image();
       probe.onload = () => { if (img.isConnected) img.src = hi; };
       probe.src = hi;
@@ -777,6 +781,62 @@ function tracksHtml(det, sp) {
 // Abspielen: mit Spotify-Verbindung im Hintergrund (Spotify Connect), sonst die Spotify-App öffnen
 let spConnected = false;
 
+// ---------- Mini-Player im Blätter-Bildschirm: was läuft gerade, Play/Pause, vor, zurück ----------
+let npTimer = 0;
+let npPlaying = false;
+
+function npHtml() {
+  return `<div class="np glass" id="np">
+    <div class="np-art"><img alt="" hidden></div>
+    <div class="np-text"><span class="np-title">Spotify</span><span class="np-sub">Album antippen und abspielen</span></div>
+    <button class="np-btn" data-action="np-prev" aria-label="Vorheriger Titel">${icon('prev', 22)}</button>
+    <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 22)}</button>
+    <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 22)}</button>
+  </div>`;
+}
+
+function npShow(st, err) {
+  const box = $('#np');
+  if (!box) return;
+  const t = st?.item;
+  box.querySelector('.np-title').textContent = t ? t.name : (err ? 'Spotify' : 'Gerade läuft nichts');
+  box.querySelector('.np-sub').textContent = t
+    ? [(t.artists || []).map((a) => a.name).join(', '), st.device?.name].filter(Boolean).join(' · ')
+    : (err || 'Album antippen und abspielen');
+  const img = box.querySelector('.np-art img');
+  const pics = (t?.album?.images || []).slice().sort((a, b) => (a.width || 0) - (b.width || 0));
+  const pic = pics.find((p) => (p.width || 0) >= 64) || pics[0];
+  if (pic) { if (img.getAttribute('src') !== pic.url) img.src = pic.url; img.hidden = false; } else img.hidden = true;
+  npSetPlaying(!!st?.is_playing);
+}
+
+function npSetPlaying(playing) {
+  npPlaying = playing;
+  const b = $('#np [data-action="np-toggle"]');
+  if (b) b.innerHTML = icon(playing ? 'pause' : 'play', 22);
+}
+
+// Alle 5 Sekunden nachsehen, solange der Blätter-Bildschirm sichtbar ist
+async function npTick() {
+  clearTimeout(npTimer);
+  if (!spConnected || !$('#np')) return;
+  if (document.visibilityState === 'visible') {
+    try { npShow(await spotify.playerState()); } catch (e) { npShow(null, e.message); }
+  }
+  npTimer = setTimeout(npTick, 5000);
+}
+
+async function npCommand(fn, playingAfter) {
+  try {
+    await fn();
+    if (playingAfter !== undefined) npSetPlaying(playingAfter);
+  } catch (e) {
+    if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) toast('Spotify läuft gerade nicht – spiel zuerst ein Album ab.');
+    else toast(e.message, 'error');
+  }
+  setTimeout(npTick, 700);
+}
+
 async function spotifyPlay({ artist, title, sid, track = '', pos = -1 }) {
   if (!spConnected) {
     location.href = spotifyLinks(artist, title, sid).app;
@@ -805,6 +865,7 @@ async function spotifyPlay({ artist, title, sid, track = '', pos = -1 }) {
     }
     await spotify.play({ deviceId: device.id, contextUri: `spotify:album:${albumId}`, offset });
     toast(`Läuft auf ${device.name}`);
+    setTimeout(npTick, 900);
   } catch (e) {
     if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
       toast('Spotify läuft gerade nicht – die App wird geöffnet.');
@@ -1177,41 +1238,44 @@ async function saveScanRows() {
 // =====================================================================
 // 5) Lücken: Diskografien (MusicBrainz)
 // =====================================================================
-// ---------- Logos der Interpreten (TheAudioDB) ----------
-const artMem = new Map(); // Gruppen-Schlüssel -> { logo, thumb }
+// ---------- Profilbilder der Interpreten (Spotify) ----------
+const artMem = new Map(); // Gruppen-Schlüssel -> { id, img, big }
 let artLoading = null;
 
 function artistThumbHtml(g) {
-  const logo = artMem.get(g.key)?.logo;
-  return logo
-    ? `<div class="cover thumb artist-card"><img class="artist-logo" src="${esc(art.small(logo))}" loading="lazy" alt=""></div>`
+  const img = artMem.get(g.key)?.img;
+  return img
+    ? `<div class="cover thumb round"><img src="${esc(img)}" loading="lazy" alt=""></div>`
     : coverHtml({ title: g.name, cover: groupCover(g) }, 'thumb');
 }
 
-// Logos im Hintergrund holen und merken (gefunden: 90 Tage, nicht gefunden: 14 Tage)
+// Bilder im Hintergrund holen und merken (gefunden: 60 Tage, nicht gefunden: 7 Tage).
+// Braucht die Spotify-Verbindung; die Spotify-ID kommt möglichst von MusicBrainz (sicherer Treffer).
 function preloadArtistArt() {
-  if (artLoading) return artLoading;
+  if (artLoading || !spConnected) return artLoading;
   artLoading = (async () => {
     const todo = [];
     for (const g of libraryGroups()) {
       if (g.various || artMem.has(g.key)) continue;
-      const c = await getCache(`art:${g.key}`);
+      const c = await getCache(`spimg:${g.key}`);
       if (c) {
         artMem.set(g.key, c.data);
         cfRefreshArtist(g.key);
-        const maxAge = (c.data.logo ? 90 : 14) * DAY;
-        if (Date.now() - c.at < maxAge) continue;
+        if (Date.now() - c.at < (c.data.img ? 60 : 7) * DAY) continue;
       }
       todo.push(g);
     }
     for (const g of todo) {
       try {
-        const data = await art.artistArt({ mbid: g.mbid, name: g.name });
+        const sid = g.mbid ? await mb.artistSpotifyId(g.mbid).catch(() => '') : '';
+        const data = await spotify.artistImage({ spotifyId: sid, name: g.name });
         artMem.set(g.key, data);
-        await setCache(`art:${g.key}`, data);
+        await setCache(`spimg:${g.key}`, data);
         cfRefreshArtist(g.key);
         if (route()[0] === 'interpreten' && !route()[1]) fillArtistList();
-      } catch { /* nächstes Mal */ }
+      } catch (e) {
+        if (e instanceof spotify.NotConnected) break;
+      }
     }
   })().finally(() => { artLoading = null; });
   return artLoading;
@@ -1465,7 +1529,7 @@ async function renderSettings() {
       <button class="cell action danger" data-action="clear-all"><span class="cell-label">Sammlung komplett löschen</span></button>
     </div>
 
-    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive · Logos: TheAudioDB</p>`;
+    <p class="group-footer center">Regal ${APP_VERSION}<br>Fotoerkennung: Google Gemini · Musikdaten: MusicBrainz und Cover Art Archive · Interpretenbilder: Spotify</p>`;
   $('#gem-model').addEventListener('change', (e) => setSetting('geminiModel', e.target.value));
   if (spConnected) fillSpDevices();
   $('#opt-live').addEventListener('change', async (e) => {
@@ -1531,6 +1595,7 @@ async function handleSpotifyCallback() {
   try {
     const code = await spotify.finishLogin(q.get('code'), q.get('state'));
     spConnected = true;
+    preloadArtistArt();
     const name = await spotify.me().catch(() => '');
     if (name) await setSetting('spUser', name);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
@@ -1727,6 +1792,11 @@ const actions = {
 
   'save-gemini': () => saveGemini(),
 
+  // Mini-Player
+  'np-toggle': () => npCommand(() => (npPlaying ? spotify.pause() : spotify.resume()), !npPlaying),
+  'np-next': () => npCommand(() => spotify.next()),
+  'np-prev': () => npCommand(() => spotify.previous()),
+
   // Spotify
   'sp-play': (el) => spotifyPlay({ artist: el.dataset.artist, title: el.dataset.title, sid: el.dataset.sid }),
   'sp-track': (el) => spotifyPlay({
@@ -1744,6 +1814,7 @@ const actions = {
     try {
       await spotify.useConnectCode($('#sp-code').value);
       spConnected = true;
+      preloadArtistArt();
       spUserKnown = false;
       toast('Mit Spotify verbunden');
       renderSettings();
@@ -1829,8 +1900,10 @@ async function init() {
     const now = await spotify.isConnected();
     if (now !== spConnected) {
       spConnected = now;
+      if (now) preloadArtistArt();
       if (route()[0] === 'einstellungen') renderSettings();
     }
+    npTick(); // Mini-Player sofort auffrischen
   });
   if (state.scan.rows.some((r) => r.state === 'pending')) matchPending();
   navigator.storage?.persist?.().catch(() => {});

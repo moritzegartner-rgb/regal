@@ -814,6 +814,35 @@ body.flow-page::before { display: none; } /* reines Schwarz wie beim iPod */
 .help b, .help i { color: var(--text); }
 .help code { display: inline-block; margin-top: 6px; padding: 6px 10px; border-radius: 10px; background: var(--fill); color: var(--text); font: 13px ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
 
+/* =========================================================
+   Interpretenbilder (Spotify) und Mini-Player
+   ========================================================= */
+.artist-photo { background: #1c1c1e; }
+.artist-photo img { object-fit: cover; }
+.cover.thumb.round { border-radius: 50%; }
+.cf-stage.with-np {
+  height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 262px);
+  height: calc(100svh - var(--safe-top) - var(--safe-bottom) - 262px);
+  min-height: 260px;
+}
+.np {
+  display: flex; align-items: center; gap: 8px;
+  margin: 14px 0 0; padding: 8px 8px 8px 8px; border-radius: 22px;
+  background: var(--glass-dark);
+}
+.np-art { width: 46px; height: 46px; flex: none; border-radius: 8px; overflow: hidden; background: var(--fill); }
+.np-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.np-text { flex: 1; min-width: 0; display: flex; flex-direction: column; padding-left: 4px; }
+.np-title { font-size: 15px; font-weight: 600; letter-spacing: -0.23px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-sub { font-size: 13px; letter-spacing: -0.08px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-btn {
+  width: 40px; height: 40px; flex: none; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: var(--text);
+  transition: transform 0.2s var(--spring);
+}
+.np-btn:active { transform: scale(0.88); background: var(--fill); }
+.np-btn.main { width: 46px; height: 46px; background: var(--glass-white); color: #000; box-shadow: inset 0 1px 0.5px #fff, 0 4px 12px rgba(0, 0, 0, 0.4); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

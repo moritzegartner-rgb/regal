@@ -42,7 +42,6 @@
   .stage.inspect .item.flipped .jc { transform: rotateY(180deg); }
   /* aufgeklappt: Deckel links, Unterteil rechts, beides zusammen mittig und leicht geneigt */
   .item.open .jc { transform: translateX(calc(var(--w) * .5 * var(--osc, .8))) scale(var(--osc, .8)) rotateX(14deg); }
-  .stage.has-open .item:not(.open) { visibility: hidden; }
   .face { position: absolute; top: 0; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
   .front, .back, .linner, .bframe, .trayp, .floor { left: calc(var(--b) - var(--e)); width: calc(100% - 2 * var(--b) + 2 * var(--e)); }
   .front { transform: translateZ(calc(var(--t) / 2)); }
@@ -53,7 +52,7 @@
     transform-origin: 0 50% calc(var(--t) / 2 - var(--L) / 2); transition: transform .95s cubic-bezier(.35,.85,.3,1); }
   .item.open .lidg { transform: rotateY(-178deg); }
   /* Innenteile nur, wenn die Hülle offen ist (spart Rechenarbeit) */
-  .item:not(.inner) .disc, .item:not(.inner) .linner, .item:not(.inner) .bframe, .item:not(.inner) .hinge { display: none; }
+  .item:not(.inner) .disc, .item:not(.inner) .linner, .item:not(.inner) .bframe { display: none; }
 
   /* gerundete Kanten als schmale Schrägflächen */
   .bev { width: calc(var(--b) * 1.4142 + 2 * var(--e)); }
@@ -201,14 +200,6 @@
   .face.liw { width: var(--lw); background: linear-gradient(90deg, rgba(255,255,255,.2), rgba(255,255,255,.06)), #1b1b1f; }
   .liw-l { left: calc(var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(90deg); }
   .liw-r { left: calc(100% - var(--b) - var(--lw) / 2); transform: translateZ(calc(var(--t) / 2 - (var(--L) + var(--b)) / 2)) rotateY(-90deg); }
-  /* Scharnier: verbindet Deckel und Unterteil – oben und unten die Gelenke, in denen der Deckel hängt */
-  .face.hinge { left: calc(var(--b) * -1.6); width: calc(var(--b) * 3.2); transform: translateZ(calc(var(--t) / 2 - var(--L) / 2));
-    background: linear-gradient(90deg, rgba(255,255,255,.3), rgba(255,255,255,.08) 30%, rgba(0,0,0,.55) 50%, rgba(255,255,255,.08) 70%, rgba(255,255,255,.3)), #1c1c20; }
-  .knuckle { position: absolute; left: -120%; right: -120%; height: 6.5%; border-radius: 3px;
-    background: linear-gradient(90deg, rgba(255,255,255,.12), rgba(255,255,255,.5) 28%, rgba(255,255,255,.14) 52%, rgba(0,0,0,.45) 78%, rgba(255,255,255,.22)), #2c2c31;
-    box-shadow: 0 0 0 .5px rgba(255,255,255,.38), 0 1px 3px rgba(0,0,0,.6); }
-  .knuckle.t { top: 1.4%; } .knuckle.b { bottom: 1.4%; }
-  .knuckle::after { content: ""; position: absolute; left: 47%; width: 6%; top: 15%; bottom: 15%; border-radius: 2px; background: rgba(0,0,0,.55); }
 
   /* ---------- Seiten: Bodenplatte, Rücken des Einlegers, Schlitz, Deckelkante ---------- */
   .side { overflow: hidden; background: #0d0d0e; }
@@ -308,19 +299,28 @@
   .lid.solid { background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
   .mirror .face::after, .mirror .core::after { content: ""; position: absolute; inset: 0;
     background: linear-gradient(to top, rgba(0,0,0,.56), rgba(0,0,0,.88) 22%, #000 40%); }
-  .stage.inspect .mirror, .item.open .mirror { display: none; }
+  .mirror { transition: opacity .4s; }
+  .item.open .mirror { opacity: 0; }
+  .stage.inspect .mirror { display: none; }
 
   /* ---------- Booklet zum Durchblättern ---------- */
   .bv { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.97); display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 18px; touch-action: none; user-select: none; -webkit-user-select: none; }
   .bv[hidden] { display: none; }
-  .bv-book { position: relative; --ar: 1; width: min(94vw, calc(66vh * var(--ar))); aspect-ratio: var(--ar); perspective: 1800px; }
-  .bv-pg { position: absolute; inset: 0; transform-origin: 0 50%; transform-style: preserve-3d;
-    transition: transform .7s cubic-bezier(.3,.75,.3,1), opacity .7s ease-in; }
-  .bv-pg.turned { transform: rotateY(-165deg); opacity: 0; }
-  .bv-pg .f { position: absolute; inset: 0; background: #141416 center / contain no-repeat; -webkit-backface-visibility: hidden; backface-visibility: hidden;
-    border-radius: 2px; box-shadow: 0 14px 40px rgba(0,0,0,.65); }
-  .bv-pg .f::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.18), rgba(0,0,0,0) 6%); }
+  /* aufgeschlagenes Buch: links und rechts je eine Seite, Blätter drehen sich um den Buchrücken in der Mitte */
+  .bv-book { position: relative; --par: 1; width: min(96vw, calc(62vh * 2 * var(--par))); perspective: 2200px;
+    transition: transform .7s cubic-bezier(.3,.8,.3,1); }
+  .leaf { position: absolute; left: 50%; top: 0; width: 50%; height: 100%; transform-origin: 0 50%; transform-style: preserve-3d;
+    transition: transform .85s cubic-bezier(.35,.7,.3,1); }
+  .leaf.turned { transform: rotateY(-180deg); }
+  .leaf.turning { z-index: 500 !important; }
+  .pg { position: absolute; inset: 0; background: #e9e5dc 50% 50% / cover no-repeat; -webkit-backface-visibility: hidden; backface-visibility: hidden;
+    box-shadow: 0 10px 34px rgba(0,0,0,.55); }
+  .pg.b { transform: rotateY(180deg); }
+  /* Schatten im Falz, am Buchrücken */
+  .pg.f::after, .pg.b::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
+  .pg.f::after { background: linear-gradient(90deg, rgba(0,0,0,.3), rgba(0,0,0,.06) 6%, rgba(0,0,0,0) 14%); }
+  .pg.b::after { background: linear-gradient(270deg, rgba(0,0,0,.3), rgba(0,0,0,.06) 6%, rgba(0,0,0,0) 14%); }
   .bv-bar { display: flex; align-items: center; gap: 12px; }
   .bv-bar span { min-width: 64px; text-align: center; font-size: 15px; color: rgba(235,235,245,.7); font-variant-numeric: tabular-nums; }
   .bv-bar button { border: 0; color: #fff; font-weight: 600; font-size: 15px; padding: 9px 16px; border-radius: 999px;
@@ -348,7 +348,7 @@
 <div class="bv" id="bv" hidden>
   <div class="bv-book" id="bvBook"></div>
   <div class="bv-bar"><button id="bvPrev">‹</button><span id="bvN"></span><button id="bvNext">›</button><button id="bvClose">Fertig</button></div>
-  <div class="bv-hint">Wischen zum Umblättern</div>
+  <div class="bv-hint">Wischen oder links/rechts tippen zum Umblättern</div>
 </div>
 <script>
 // Test-Alben (Green Day) – Cover vom Cover Art Archive
@@ -518,7 +518,6 @@ stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
     <div class="face disc"></div>
     <div class="face bframe"></div>
     <div class="face iwall iwall-l"></div><div class="face iwall iwall-r"></div><div class="face iwall iwall-t"></div><div class="face iwall iwall-b"></div>
-    <div class="face hinge"><i class="knuckle t"></i><i class="knuckle b"></i></div>
     ${backHtml(a, i, true)}
     <div class="face bev bl"></div><div class="face bev br"></div>
     ${sideHtml(a, 'l', true)}${sideHtml(a, 'r', true)}
@@ -538,6 +537,18 @@ stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
 const els = [...stage.querySelectorAll('.item')];
 
 let pos = 1, target = 1, raf = 0, shown = -1, flipped = -1, opened = -1;
+let openK = 0, openRaf = 0; // 0 = alle Hüllen sichtbar, 1 = Nachbarn ganz weggeglitten
+function tweenOpen(to) {
+  cancelAnimationFrame(openRaf);
+  const from = openK, start = performance.now(), dur = 700;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur), k = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    openK = from + (to - from) * k;
+    layout();
+    if (t < 1) openRaf = requestAnimationFrame(step);
+  };
+  openRaf = requestAnimationFrame(step);
+}
 let mode = 'flow', rx = 4, ry = -32;
 const clampI = (v) => Math.max(0, Math.min(ALBUMS.length - 1, v));
 const size = () => (mode === 'inspect'
@@ -577,8 +588,11 @@ function layout() {
     el.firstElementChild.style.setProperty('--s', `${s}px`);
     // weich hinaus- und hereindrehen (wie beim iPod): Drehung, Versatz und Tiefe folgen derselben sanften Kurve
     const e = Math.sin(Math.min(1, ad) * Math.PI / 2), sg = Math.sign(d);
-    const x = sg * (e * 0.4 + ad * 0.21) * w;
-    const z = -e * 0.5 * s;
+    let x = sg * (e * 0.4 + ad * 0.21) * w;
+    let z = -e * 0.5 * s;
+    // beim Aufklappen gleiten die anderen Hüllen sanft zur Seite und nach hinten weg
+    if (openK > 0 && i !== cur) { x += sg * openK * stage.clientWidth * 0.9; z -= openK * s * 1.2; }
+    el.style.visibility = openK >= 1 && i !== cur ? 'hidden' : '';
     el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
     el.style.zIndex = String(1000 - Math.round(ad * 100));
     light(el, d, 0);
@@ -624,13 +638,14 @@ function setOpen(i, on) {
     if (flipped === i) { el.classList.remove('flipped'); el.firstElementChild.classList.remove('show-list'); flipped = -1; }
     if (opened >= 0 && opened !== i) setOpen(opened, false);
     el.classList.add('inner'); // Innenteile zuerst einblenden, dann aufklappen
+    ensureBook(i).catch(() => {});
     requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('open')));
     opened = i;
-    stage.classList.add('has-open');
+    tweenOpen(1);
   } else {
     el.classList.remove('open');
     if (opened === i) opened = -1;
-    stage.classList.remove('has-open');
+    tweenOpen(0);
     setTimeout(() => { if (!el.classList.contains('open')) el.classList.remove('inner'); }, 1000);
   }
   updateActs();
@@ -639,8 +654,7 @@ function updateActs() {
   const cur = clampI(Math.round(pos));
   document.getElementById('aOpen').textContent = opened === cur ? 'Schließen' : 'Öffnen';
   document.getElementById('aFlip').textContent = flipped === cur ? 'Vorderseite' : 'Umdrehen';
-  const n = bookletPages(cur).length;
-  document.getElementById('aBook').textContent = `Booklet${n > 1 ? ` (${n})` : ''}`;
+  document.getElementById('aBook').textContent = 'Booklet';
 }
 function pressButton(btn) {
   const jc = btn.closest('.jc');
@@ -827,53 +841,142 @@ function loadScans() { // alle gleichzeitig starten; die MusicBrainz-Warteschlan
     findScan(ALBUMS[i][2]).catch(() => null).then((sc) => {
       SCAN[i] = sc;
       if (sc) applyScan(i, sc);
+      if (sc?.bookReady) applyBpage(i);
       showSrc();
       updateActs();
     });
   }
 }
 
-// ================= Booklet zum Durchblättern =================
+// ================= Booklet zum Durchblättern (wie ein echtes Buch) =================
+// Gescannte Doppelseiten werden in zwei Einzelseiten geteilt. Jedes Blatt hat vorne und hinten eine Seite
+// und dreht sich beim Umblättern um den Buchrücken – so wie beim echten Booklet.
 const bv = document.getElementById('bv'), bvBook = document.getElementById('bvBook'), bvN = document.getElementById('bvN');
-let bvPages = [], bvIdx = 0;
+let bvPages = [], bvLeaf = 0;
 function bookletPages(i) {
   const sc = SCAN[i];
   return [sc?.frontBig || sc?.front || cover(ALBUMS[i], 500), ...(sc?.booklet || []).map((p) => p.b || p.s)];
 }
-function openBooklet() {
+// kleines Graustufen-Abbild (16 × 16) zum Vergleichen zweier Bilder
+async function thumbVec(url, part) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = url;
+  await img.decode();
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d'), w = img.naturalWidth, h = img.naturalHeight;
+  g.drawImage(img, part === 'r' ? w / 2 : 0, 0, part === 'full' ? w : w / 2, h, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data, v = [];
+  for (let k = 0; k < d.length; k += 4) v.push((d[k] + d[k + 1] + d[k + 2]) / 3);
+  const m = v.reduce((a, b) => a + b, 0) / v.length;
+  return v.map((x) => x - m);
+}
+const vecDiff = (a, b) => a.reduce((sum, x, k) => sum + Math.abs(x - b[k]), 0) / a.length;
+// Booklet vorbereiten: Doppelseiten erkennen und prüfen, ob der erste Scan der Außenumschlag (Rückseite | Cover) ist
+async function ensureBook(i) {
+  const sc = SCAN[i];
+  if (!sc || sc.bookReady) return sc;
+  const list = sc.booklet || [];
+  sc.bookRatios = await Promise.all(list.map((p) => ratioOf(p.s).catch(() => 1)));
+  sc.outerFirst = false;
+  if (list.length && sc.bookRatios[0] > 1.5 && sc.front) {
+    try {
+      const [a, b] = await Promise.all([thumbVec(sc.front, 'full'), thumbVec(list[0].s, 'r')]);
+      sc.outerFirst = vecDiff(a, b) < 28;
+    } catch {}
+  }
+  sc.bookReady = true;
+  try { localStorage.setItem(`regal-scan-v6:${ALBUMS[i][2]}`, JSON.stringify(sc)); } catch {}
+  applyBpage(i);
+  return sc;
+}
+// Einzelseiten in Lesereihenfolge: Cover, Innenseiten (Doppelseiten geteilt), Rückseite
+function bookPages(i) {
+  const sc = SCAN[i], list = sc?.booklet || [], pages = [];
+  let backCover = null;
+  list.forEach((p, k) => {
+    const r = sc.bookRatios?.[k] || 1, u = p.b || p.s;
+    if (k === 0 && sc.outerFirst) { pages.push({ u, part: 'r' }); backCover = { u, part: 'l' }; return; }
+    if (r > 1.5) pages.push({ u, part: 'l' }, { u, part: 'r' });
+    else pages.push({ u, part: 'full' });
+  });
+  if (!sc?.outerFirst) pages.unshift({ u: sc?.frontBig || sc?.front || cover(ALBUMS[i], 500), part: 'full' });
+  if (backCover) pages.push(backCover);
+  return pages;
+}
+// innen im Deckel: Rückseite des Booklets (Außenumschlag links) – sonst die letzte Seite
+function applyBpage(i) {
+  const sc = SCAN[i], jc = els[i].firstElementChild;
+  if (!sc?.booklet?.length) return;
+  const pick = sc.outerFirst ? { u: sc.booklet[0].s, spread: true }
+    : { u: sc.booklet[sc.booklet.length - 1].s, spread: (sc.bookRatios?.[sc.booklet.length - 1] || sc.lastRatio || 1) > 1.5 };
+  jc.style.setProperty('--bpage', `url("${pick.u}")`);
+  jc.style.setProperty('--bps', pick.spread ? '200% 100%' : 'cover');
+  jc.style.setProperty('--bpp', pick.spread ? '0% 50%' : '50% 50%');
+  jc.classList.add('has-bpage');
+}
+async function openBooklet() {
   const i = clampI(Math.round(pos));
-  bvPages = bookletPages(i); bvIdx = 0;
-  bvBook.style.setProperty('--ar', '1');
-  bvBook.innerHTML = bvPages.map((u, k) => `<div class="bv-pg" style="z-index:${bvPages.length - k}"><div class="f"></div></div>`).join('');
   bv.hidden = false;
+  bvBook.innerHTML = '';
+  bvN.textContent = 'lädt …';
+  const sc = await ensureBook(i);
+  if (bv.hidden) return; // inzwischen geschlossen
+  const pages = bookPages(i);
+  // Seitenformat: halbe Doppelseite bzw. Cover (CD-Booklets sind fast quadratisch)
+  let ratio = sc?.outerFirst ? (sc.bookRatios[0] / 2) : await ratioOf(pages[0].u).catch(() => 1);
+  if (bv.hidden) return;
+  bvPages = pages; bvLeaf = 0;
+  const par = Math.min(1.4, Math.max(0.7, ratio));
+  bvBook.style.setProperty('--par', par.toFixed(3));
+  bvBook.style.aspectRatio = String(2 * par);
+  const leaves = Math.ceil(pages.length / 2);
+  bvBook.innerHTML = Array.from({ length: leaves }, () => '<div class="leaf"><div class="pg f"></div><div class="pg b"></div></div>').join('');
   bvShow();
 }
+function pageStyle(el, page) {
+  if (!page) { el.style.backgroundImage = 'none'; return; } // leere letzte Seite
+  el.style.backgroundImage = `url("${page.u}")`;
+  el.style.backgroundSize = page.part === 'full' ? 'cover' : '200% 100%';
+  el.style.backgroundPosition = page.part === 'l' ? '0% 50%' : page.part === 'r' ? '100% 50%' : '50% 50%';
+}
 function bvShow() {
-  [...bvBook.children].forEach((pg, k) => {
-    pg.classList.toggle('turned', k < bvIdx);
-    const f = pg.firstElementChild;
-    if (Math.abs(k - bvIdx) <= 1 && !f.dataset.on) { // nur die Seiten in der Nähe laden (spart Speicher)
-      f.dataset.on = '1';
-      f.style.backgroundImage = `url("${bvPages[k]}")`;
-      ratioOf(bvPages[k]).then((r) => { // Doppelseiten sind breiter – das Buch passt sich an
-        const cur = parseFloat(bvBook.style.getPropertyValue('--ar')) || 1;
-        if (r > cur + 0.05) bvBook.style.setProperty('--ar', Math.min(2.2, r).toFixed(3));
-      }).catch(() => {});
+  const leaves = [...bvBook.children], n = leaves.length, P = bvPages.length;
+  leaves.forEach((lf, j) => {
+    const turned = j < bvLeaf;
+    lf.classList.toggle('turned', turned);
+    lf.style.zIndex = String(turned ? 100 + j : 100 - j);
+    if (Math.abs(j - bvLeaf) <= 2 && !lf.dataset.on) { // nur Blätter in der Nähe laden (spart Speicher)
+      lf.dataset.on = '1';
+      pageStyle(lf.children[0], bvPages[2 * j]);
+      pageStyle(lf.children[1], bvPages[2 * j + 1]);
     }
   });
-  bvN.textContent = `${bvIdx + 1} / ${bvPages.length}`;
+  // zu: nur der Umschlag, mittig – am Ende nur die letzte Seite, mittig
+  bvBook.style.transform = bvLeaf === 0 ? 'translateX(-25%)' : bvLeaf >= n ? 'translateX(25%)' : 'none';
+  const left = 2 * bvLeaf, right = 2 * bvLeaf + 1; // Seitennummern (1 = Umschlag)
+  bvN.textContent = bvLeaf === 0 ? `1 / ${P}` : right <= P ? `${left}–${right} / ${P}` : `${left} / ${P}`;
 }
-function bvGo(dir) { bvIdx = Math.max(0, Math.min(bvPages.length - 1, bvIdx + dir)); bvShow(); }
+function bvGo(dir) {
+  const n = bvBook.children.length;
+  const next = Math.max(0, Math.min(n, bvLeaf + dir));
+  if (next === bvLeaf) return;
+  const lf = bvBook.children[dir > 0 ? bvLeaf : bvLeaf - 1]; // dieses Blatt wird gerade umgeblättert → ganz oben
+  lf.classList.add('turning');
+  setTimeout(() => lf.classList.remove('turning'), 850);
+  bvLeaf = next;
+  bvShow();
+}
 document.getElementById('bvPrev').addEventListener('click', () => bvGo(-1));
 document.getElementById('bvNext').addEventListener('click', () => bvGo(1));
 document.getElementById('bvClose').addEventListener('click', () => { bv.hidden = true; bvBook.innerHTML = ''; });
 let bvDrag = null;
-bvBook.addEventListener('pointerdown', (e) => { bvDrag = { x: e.clientX }; });
-bvBook.addEventListener('pointerup', (e) => {
+bv.addEventListener('pointerdown', (e) => { if (!e.target.closest('button')) bvDrag = { x: e.clientX }; });
+bv.addEventListener('pointerup', (e) => {
   if (!bvDrag) return;
   const dx = e.clientX - bvDrag.x; bvDrag = null;
   if (dx < -35) bvGo(1); else if (dx > 35) bvGo(-1);
-  else { const r = bvBook.getBoundingClientRect(); bvGo(e.clientX > r.left + r.width / 2 ? 1 : -1); } // Tippen rechts/links
+  else bvGo(e.clientX > innerWidth / 2 ? 1 : -1); // Tippen rechts = weiter, links = zurück
 });
 
 seg('sk', (v) => document.documentElement.style.setProperty('--sk', v));

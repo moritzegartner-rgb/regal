@@ -7,7 +7,7 @@ import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -343,17 +343,20 @@ function renderFlow(level, key = '') {
   }
 
   view().innerHTML = `${nav}
-    <div class="cf-stage ${spConnected ? 'with-np' : ''}" id="cf-stage">
-      ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
-        <div class="cf-card">
-          <div class="cf-front">${cfFrontHtml(e)}</div>
-          ${level === 'albums' ? '<div class="cf-back"></div>' : ''}
-        </div>
-      </div>`).join('')}
+    <div class="cf-area">
+      <div class="cf-stage ${spConnected ? 'with-np' : ''}" id="cf-stage">
+        ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none">
+          <div class="cf-card">
+            <div class="cf-front">${cfFrontHtml(e)}</div>
+            ${level === 'albums' ? '<div class="cf-back"></div>' : ''}
+          </div>
+        </div>`).join('')}
+      </div>
+      ${spConnected ? npNowHtml() : ''}
     </div>
     <div class="cf-info">
-      <div class="cf-title">${EQ}<span class="cf-title-text"></span></div>
-      <div class="cf-sub"></div>
+      <div class="cf-title"><span class="cf-title-text"></span></div>
+      <div class="cf-sub">${EQ}<span class="cf-sub-text"></span></div>
     </div>
     ${spConnected ? npHtml() : ''}`;
   if (spConnected) npTick();
@@ -409,7 +412,7 @@ function cfLayout() {
     CF.shown = cur;
     const e = CF.entries[cur];
     $('.cf-title-text').textContent = e.title;
-    $('.cf-sub').textContent = e.sub;
+    $('.cf-sub-text').textContent = e.sub;
     if (CF.flipped >= 0 && CF.flipped !== cur) cfUnflip();
     npUpdateView();
   }
@@ -791,11 +794,15 @@ let npNow = null; // { albumId, album, artists, artistIds, track, img }
 // Drei kleine Balken wie bei Apple Music (bewegen sich nur, während Musik läuft)
 const EQ = '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>';
 
+// „Läuft gerade“-Kapsel: schwebt oben über den Covern, damit der Player unten nie verrutscht
+function npNowHtml() {
+  return `<button class="np-now glass" data-action="np-goto" hidden>
+    <img alt="" hidden><span class="np-now-text"></span>${EQ}
+  </button>`;
+}
+
 function npHtml() {
   return `<div class="np" id="np">
-    <button class="np-now glass" data-action="np-goto" hidden>
-      <img alt="" hidden><span class="np-now-text"></span>${EQ}
-    </button>
     <div class="np-controls">
       <button class="np-btn" data-action="np-prev" aria-label="Vorheriger Titel">${icon('prev', 30)}</button>
       <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 32)}</button>
@@ -847,11 +854,19 @@ function entryIsPlaying(e) {
   return isPlayingAlbum(e.title, state.current?.g?.name, mbid && albumMem.get(mbid)?.spotify);
 }
 
-// Anzeige auffrischen: Balken neben dem Titel, „Läuft gerade“-Hinweis, laufender Titel in Listen
+// Anzeige auffrischen: laufender Song unter dem Cover, „Läuft gerade“-Kapsel, laufender Titel in Listen
 function npUpdateView() {
-  const here = npNow && $('#cf-stage') && entryIsPlaying(CF.entries[CF.shown]);
-  document.querySelector('.cf-title')?.classList.toggle('playing', !!here);
-  const pill = $('#np .np-now');
+  const e = CF.entries[CF.shown];
+  const here = npNow && $('#cf-stage') && entryIsPlaying(e);
+  // Steht das laufende Album/der laufende Interpret in der Mitte: Song (mit Balken) statt Jahr/Anzahl
+  const sub = $('.cf-sub');
+  if (sub && e) {
+    sub.classList.toggle('playing', !!here);
+    sub.querySelector('.cf-sub-text').textContent = here
+      ? (CF.level === 'artists' ? `${npNow.track} · ${npNow.album}` : npNow.track)
+      : e.sub;
+  }
+  const pill = $('.np-now');
   if (pill) {
     pill.hidden = !npNow || !!here;
     if (npNow) {

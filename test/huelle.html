@@ -3,74 +3,134 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Test: klare CD-Hülle</title>
-<!-- Test zum Ausprobieren: klare Jewel-Case mit Mikrokratzern und wanderndem Lichtreflex.
-     Gehört nicht zur App, nur zum Anschauen auf dem iPhone. -->
+<title>Test: CD-Hülle</title>
+<!-- Test zum Ausprobieren: klassische Jewel Case (geriffelter schwarzer Rand) möglichst nah am Original –
+     Öffnungs-Schlitz, abgerundete Kanten, Scharnier-Zapfen, Halte-Nasen, Mikrokratzer, Abrieb, Fingerabdruck,
+     wandernder Lichtreflex. Gehört nicht zur App, nur zum Anschauen auf dem iPhone. -->
 <style>
   :root { color-scheme: dark; --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
     font: 17px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif; letter-spacing: -0.43px; }
   .top { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 14px); text-align: center; font-size: 13px; color: rgba(235,235,245,.6); }
-  .stage { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 50px); height: 58vh;
+  .stage { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 50px); height: 56vh;
     perspective: 820px; perspective-origin: 50% 40%; touch-action: none; user-select: none; -webkit-user-select: none; overflow: hidden; }
   .item { position: absolute; left: 50%; top: 42%; width: 0; height: 0; transform-style: preserve-3d; }
-  .info { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 50px + 58vh + 6px); text-align: center; }
+  .info { position: absolute; left: 0; right: 0; top: calc(var(--safe-top) + 50px + 56vh + 4px); text-align: center; }
   .info b { display: block; font-size: 20px; font-weight: 600; letter-spacing: -.45px; }
   .info span { font-size: 15px; color: rgba(235,235,245,.6); }
-  .opts { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 22px); display: flex; flex-direction: column; align-items: center; gap: 10px; }
-  .opts small { font-size: 13px; color: rgba(235,235,245,.6); }
+  .opts { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 18px); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .row { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .row small { font-size: 13px; color: rgba(235,235,245,.6); }
   .seg { display: inline-flex; padding: 4px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.05)); box-shadow: inset 0 1px .5px rgba(255,255,255,.42), inset 0 0 0 .5px rgba(255,255,255,.12); }
   .seg button { border: 0; background: none; color: rgba(235,235,245,.6); font: 600 15px -apple-system, system-ui, sans-serif; padding: 8px 16px; border-radius: 999px; }
   .seg button.on { background: linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.14)); color: #fff; }
 
-  /* ================= Klare Jewel-Case als 3D-Kästchen ================= */
-  .jc { --s: 200px; --w: calc(var(--s) * 1.136); --t: calc(var(--s) * 0.083);
+  /* ============ Jewel Case – Maße wie im Original: 142 × 125 × 10,4 mm ============ */
+  .jc { --s: 200px; --w: calc(var(--s) * 1.136); --t: calc(var(--s) * 0.083); --b: calc(var(--t) * 0.24);
     position: absolute; width: var(--w); height: var(--s); left: calc(var(--w) / -2); top: calc(var(--s) / -2);
     transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,1.25,.4,1); }
   .item.flipped .jc { transform: rotateY(180deg) scale(1.2); }
   .face { position: absolute; top: 0; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
-  .front { left: 0; width: 100%; transform: translateZ(calc(var(--t) / 2)); border-radius: 3px; overflow: hidden; }
+  /* Deckel vorne – die senkrechten Kanten sind abgeschrägt/gerundet (eigene schmale Flächen) */
+  .front { left: var(--b); width: calc(100% - 2 * var(--b)); transform: translateZ(calc(var(--t) / 2)); }
+  .bev-l, .bev-r { width: calc(var(--b) * 1.4142); border-radius: 1.5px; }
+  .bev-l { left: calc(var(--b) * -0.2071); transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(-45deg);
+    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,var(--bvl, .2)) 55%, rgba(255,255,255,.12)), #161618; }
+  .bev-r { left: calc(100% - var(--b) * 1.2071); transform: translateZ(calc((var(--t) - var(--b)) / 2)) rotateY(45deg);
+    background: linear-gradient(90deg, rgba(255,255,255,.14), rgba(255,255,255,var(--bvr, .2)) 45%, rgba(255,255,255,.05)), #161618; }
+  .side-l { left: calc((var(--t) - var(--b)) / -2); width: calc(var(--t) - var(--b)); transform: translateZ(calc(var(--b) / -2)) rotateY(-90deg); }
+  .side-r { left: calc(100% - (var(--t) - var(--b)) / 2); width: calc(var(--t) - var(--b)); transform: translateZ(calc(var(--b) / -2)) rotateY(90deg); }
+  .face.top-f, .face.bot-f { left: 0; width: 100%; height: var(--t); }
+  .face.top-f { top: calc(var(--t) / -2); transform: rotateX(90deg);
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--b)), calc(100% - var(--b)) 100%, var(--b) 100%, 0 calc(100% - var(--b)));
+    background: linear-gradient(0deg, rgba(255,255,255,.32), rgba(255,255,255,.08) 7%, rgba(255,255,255,.05) 25%, #000 25% 27.5%, rgba(255,255,255,.2) 27.5% 30%, rgba(255,255,255,.06) 33%, rgba(255,255,255,.04) 92%, rgba(255,255,255,.14)), #111113; }
+  .face.bot-f { top: calc(var(--s) - var(--t) / 2); transform: rotateX(-90deg);
+    clip-path: polygon(var(--b) 0, calc(100% - var(--b)) 0, 100% var(--b), 100% 100%, 0 100%, 0 var(--b));
+    background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06) 7%, rgba(255,255,255,.04) 25%, #000 25% 27.5%, rgba(255,255,255,.14) 27.5% 30%, rgba(255,255,255,.04) 33%, rgba(255,255,255,.03) 92%, rgba(255,255,255,.1)), #0c0c0e; }
   .back { left: 0; width: 100%; transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
-  .side-l { left: calc(var(--t) / -2); width: var(--t); transform: rotateY(-90deg); }
-  .side-r { left: calc(100% - var(--t) / 2); width: var(--t); transform: rotateY(90deg); }
 
-  /* Booklet unter dem klaren Deckel */
-  .booklet { position: absolute; top: 2.4%; bottom: 2.4%; right: 3%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat; }
-  /* klares Scharnier: nur Plastik, feine Kanten, zwei Gelenk-Nasen */
-  .hinge { position: absolute; left: 0; top: 0; bottom: 0; width: 10.5%;
-    background: linear-gradient(90deg, rgba(255,255,255,.1), rgba(255,255,255,.02) 45%, rgba(255,255,255,.06) 85%, rgba(255,255,255,.14)),
-      linear-gradient(rgba(0,0,0,.5), rgba(0,0,0,.5)), var(--img) 0 50% / 1400% auto no-repeat, #1c1c1e;
-    box-shadow: inset -1px 0 0 rgba(255,255,255,.26), inset 1px 0 0 rgba(255,255,255,.12); }
-  .hinge::before, .hinge::after { content: ""; position: absolute; left: 24%; right: 30%; height: 10%; border-radius: 3px;
-    border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.035); }
-  .hinge::before { top: 6%; } .hinge::after { bottom: 6%; }
+  /* ---------- Vorderseite: klarer Deckel über schwarzem Träger ---------- */
+  .lid { position: absolute; inset: 0; overflow: hidden; border-radius: calc(var(--s) * .014); background: #0b0b0c; }
+  .tray { position: absolute; inset: 0; background: radial-gradient(120% 90% at 30% 20%, #19191b, #0a0a0b 70%); }
+  /* geriffelter schwarzer Rand am Scharnier (wie beim klassischen Jewel Case) */
+  .ribs { position: absolute; left: 0; top: 0; bottom: 0; width: 8%;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.11) 0 1px, rgba(255,255,255,0) 1px 3px),
+      linear-gradient(90deg, rgba(48,48,52,.98), rgba(20,20,22,.98) 70%, rgba(30,30,33,.98));
+    box-shadow: inset -1px 0 0 rgba(255,255,255,.2), inset 1px 0 0 rgba(255,255,255,.08), 1px 0 0 rgba(0,0,0,.6); }
+  /* Scharnier-Zapfen oben und unten */
+  .pin { position: absolute; left: 1.6%; width: 4.6%; height: 9%; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.22) 45%, rgba(255,255,255,.04)), #1d1d20;
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.28), 0 0 2px rgba(0,0,0,.7); }
+  .pin.a { top: 4.5%; } .pin.b { bottom: 4.5%; }
+  /* Booklet: Papier, nie ganz gerade eingelegt und nie ganz flach */
+  .booklet { position: absolute; top: 2.3%; bottom: 2.3%; right: 2.6%; aspect-ratio: 1; background: #1c1c1e center/cover no-repeat;
+    box-shadow: 0 0 0 .5px rgba(0,0,0,.7), 0 1px 3px rgba(0,0,0,.7);
+    transform: translate(var(--ox, 0), var(--oy, 0)) rotate(var(--rot, 0deg)); }
+  .booklet::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(165deg, rgba(255,255,255,.06), rgba(255,255,255,0) 35%, rgba(0,0,0,.05) 70%, rgba(0,0,0,.13)),
+      linear-gradient(90deg, rgba(0,0,0,.22), rgba(0,0,0,0) 2.5%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+  /* Halte-Nasen im Deckel, die das Booklet festhalten */
+  .tab { position: absolute; width: 2.2%; height: 8%; border-radius: 1px;
+    background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.17)); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.34), 0 0 1.5px rgba(0,0,0,.6); }
+  .tab.r1 { right: 1.2%; top: 10%; } .tab.r2 { right: 1.2%; bottom: 10%; }
+  .tab.l1 { left: 9.2%; top: 10%; } .tab.l2 { left: 9.2%; bottom: 10%; }
+  /* Deckel-Wände oben und unten */
+  .lip { position: absolute; left: 0; right: 0; height: 1.3%; }
+  .lip.t { top: 0; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)); box-shadow: 0 .5px 0 rgba(255,255,255,.18); }
+  .lip.b { bottom: 0; background: linear-gradient(0deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); box-shadow: 0 -.5px 0 rgba(255,255,255,.14); }
 
-  /* Breiter, weicher Glanz – wandert beim Blättern über die Hülle */
+  /* Licht: gerader Glanzstreifen + gebogener Reflex (Deckel ist nie ganz plan) – beide wandern beim Blättern */
   .sheen { position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.16) 44%, rgba(255,255,255,.05) 50%, rgba(255,255,255,0) 58%);
+    background: linear-gradient(112deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.15) 43%, rgba(255,255,255,.055) 49%, rgba(255,255,255,0) 57%);
     background-size: 320% 100%; background-position: var(--sx, 50%) 0; }
-  /* Mikrokratzer: nur dort sichtbar, wo gerade Licht hinfällt */
+  .uneven { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(150% 70% at var(--ux, 50%) 118%, rgba(255,255,255,0) 60%, rgba(255,255,255,.075) 65%, rgba(255,255,255,0) 71%); }
+  /* Mikrokratzer und Abrieb: vor allem dort sichtbar, wo gerade Licht hinfällt */
   .scratch { position: absolute; inset: 0; pointer-events: none; background-size: 340px 340px; background-position: var(--tx, 0) var(--ty, 0);
     opacity: var(--sk, .9);
     -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%);
     mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.7) 26%, rgba(0,0,0,.2) 55%, rgba(0,0,0,.1) 100%); }
-  /* heller Lichtpunkt */
+  .wear { position: absolute; inset: 0; pointer-events: none; background-size: 100% 100%; opacity: var(--sk, .9);
+    -webkit-mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%);
+    mask-image: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), #000 0%, rgba(0,0,0,.75) 30%, rgba(0,0,0,.32) 62%, rgba(0,0,0,.24) 100%); }
+  .crack { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: min(1, calc(var(--sk, .9) + .3)); }
+  .crack path { fill: none; stroke: rgba(255,255,255,.55); stroke-width: .8px; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
   .spot { position: absolute; inset: 0; pointer-events: none;
     background: radial-gradient(circle at var(--lx, 30%) var(--ly, 22%), rgba(255,255,255,.2), rgba(255,255,255,.05) 22%, rgba(255,255,255,0) 42%); }
-  /* Kanten des Deckels */
-  .rim { position: absolute; inset: 0; pointer-events: none; border-radius: 3px;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.2), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(255,255,255,.12); }
-  .rim::after { content: ""; position: absolute; top: 2.4%; bottom: 2.4%; right: 3%; aspect-ratio: 1; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); }
+  /* dicke Plastikkante des Deckels */
+  .rim { position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.24), inset 0 0 0 2px rgba(0,0,0,.35), inset 0 0 0 3px rgba(255,255,255,.05), inset 0 1px 0 1px rgba(255,255,255,.16); }
 
-  /* Rücken (links): Einleger-Rücken hinter klarem Plastik */
-  .side-l { background: linear-gradient(90deg, rgba(255,255,255,.22), rgba(255,255,255,0) 30%, rgba(255,255,255,0) 70%, rgba(255,255,255,.16)),
-      linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,.38)), var(--img) 50% 50% / 1400% auto no-repeat, #2c2c2e;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.22);
-    display: flex; align-items: center; justify-content: center; overflow: hidden; }
-  .spine { writing-mode: vertical-rl; transform: rotate(180deg); font-size: calc(var(--t) * .42); font-weight: 700; letter-spacing: .08em; color: #fff; text-shadow: 0 0 3px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
-  /* Öffnungskante (rechts): klares Plastik */
-  .side-r { background: linear-gradient(90deg, rgba(255,255,255,.2), rgba(255,255,255,.05) 40%, rgba(255,255,255,.12)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+  /* ---------- Seiten: Deckelkante, Schlitz, klarer Boden mit dem Rücken des Einlegers ---------- */
+  .side { overflow: hidden; border-radius: 1.5px; background: #0d0d0e; }
+  .side .inlay { position: absolute; top: 1.5%; bottom: 1.5%; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    background: linear-gradient(rgba(0,0,0,.4), rgba(0,0,0,.4)), var(--img) 50% 50% / 1400% auto no-repeat, #2c2c2e; }
+  .side-l .inlay { left: 7%; right: 31%; }
+  .side-r .inlay { left: 31%; right: 7%; }
+  .spine { writing-mode: vertical-rl; transform: rotate(180deg); font-size: calc(var(--t) * .34); font-weight: 700; letter-spacing: .08em;
+    color: #fff; text-shadow: 0 0 2px rgba(0,0,0,.6); white-space: nowrap; text-transform: uppercase; }
+  .spine.r { transform: none; }
+  .side .lidedge { position: absolute; top: 0; bottom: 0; width: 26%; }
+  .side-l .lidedge { right: 0; background: linear-gradient(270deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12)), #141416; }
+  .side-r .lidedge { left: 0; background: linear-gradient(90deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 30%, rgba(255,255,255,.03) 70%, rgba(255,255,255,.12)), #141416; }
+  /* Schlitz zwischen Deckel und Boden – hier öffnet man die Hülle */
+  .side .seam { position: absolute; top: 0; bottom: 0; width: 1.5px; background: #000; }
+  .side-l .seam { right: 26%; box-shadow: -1px 0 0 rgba(255,255,255,.34), 1px 0 0 rgba(255,255,255,.22); }
+  .side-r .seam { left: 26%; box-shadow: 1px 0 0 rgba(255,255,255,.38), -1px 0 0 rgba(255,255,255,.24); }
+  /* Scharnier-Zapfen von der Seite */
+  .side-l .knuckle { position: absolute; right: 0; width: 44%; height: 9%; border-radius: 2px;
+    background: linear-gradient(270deg, rgba(255,255,255,.1), rgba(255,255,255,.32) 35%, rgba(255,255,255,.08) 75%, rgba(255,255,255,.18)), #1a1a1c;
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3), 0 0 2px rgba(0,0,0,.8); }
+  .side-l .knuckle.a { top: 4.5%; } .side-l .knuckle.b { bottom: 4.5%; }
+  /* klare Plastikwand: helle Brechungskanten, Licht wandert mit */
+  .side .wall { position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(255,255,255,.18), rgba(255,255,255,0) 7%, rgba(255,255,255,0) 93%, rgba(255,255,255,.14)),
+      linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,0) 4%, rgba(255,255,255,0) 96%, rgba(255,255,255,.1)),
+      linear-gradient(180deg, rgba(255,255,255,0) 15%, rgba(255,255,255,var(--sl, .06)) 50%, rgba(255,255,255,0) 85%);
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.22); }
 
   /* Rückseite beim Umdrehen: so wie jetzt in der App (Glas-Karte mit Titelliste) */
   .back { display: flex; flex-direction: column; border-radius: 14px; overflow: hidden;
@@ -83,21 +143,22 @@
   .back ol { margin: 0; padding: 4px 10px 8px 30px; overflow: auto; font-size: 12px; line-height: 2; color: rgba(255,255,255,.92); }
 
   /* Spiegelung auf dem Boden (deckend wie beim iPod) */
-  .refl { position: absolute; left: 0; right: 0; top: calc(100% + 2px); height: 46%; overflow: hidden; transform: translateZ(calc(var(--t) / 2)); }
+  .refl { position: absolute; left: var(--b); width: calc(100% - 2 * var(--b)); top: calc(100% + 2px); height: 46%; overflow: hidden; transform: translateZ(calc(var(--t) / 2)); }
   .refl > .inner { position: absolute; left: 0; right: 0; top: 0; height: 217.4%; transform: scaleY(-1); }
-  .refl > .inner > .face { transform: none; }
   .refl::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,.58), rgba(0,0,0,.9) 50%, #000 85%); }
-  .item.flipped .refl { opacity: 0; }
+  .item.flipped .refl, .stage.inspect .refl { opacity: 0; }
 </style>
 </head>
 <body>
-<div class="top">Test: klare CD-Hülle · wischen zum Blättern · antippen zum Umdrehen</div>
+<div class="top" id="hint">Wischen zum Blättern · Tippen zum Umdrehen</div>
 <div class="stage" id="stage"></div>
 <div class="info"><b id="t"></b><span id="u"></span></div>
 <div class="opts">
-  <small>Kratzer</small>
-  <div class="seg" id="sk">
-    <button data-v="0">aus</button><button data-v=".55">wenig</button><button data-v=".9" class="on">mittel</button><button data-v="1.35">stark</button>
+  <div class="row"><small>Ansicht</small>
+    <div class="seg" id="mode"><button data-v="flow" class="on">Blättern</button><button data-v="inspect">Von nah drehen</button></div>
+  </div>
+  <div class="row"><small>Kratzer</small>
+    <div class="seg" id="sk"><button data-v="0">aus</button><button data-v=".55">wenig</button><button data-v=".9" class="on">mittel</button><button data-v="1.35">stark</button></div>
   </div>
 </div>
 <script>
@@ -114,72 +175,171 @@ const ALBUMS = [
   ['Saviors', '2024', 'c1417e42-7eac-4817-bb1e-dba7a7ba044e'],
 ];
 const TRACKS = ['Burnout', 'Having a Blast', 'Chump', 'Longview', 'Welcome to Paradise', 'Pulling Teeth', 'Basket Case', 'She', 'Sassafras Roots', 'When I Come Around', 'Coming Clean', 'Emenius Sleepus', 'In the End', 'F.O.D.'];
+const cover = (a, px) => `https://coverartarchive.org/release-group/${a[2]}/front-${px}`;
 
-// ---------- Mikrokratzer-Textur einmal erzeugen (zufällige Haarlinien + Wisch-Kringel + Staub) ----------
+// Zufall mit festem Startwert: jede Hülle hat immer dieselben kleinen Macken
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------- Mikrokratzer (Haarlinien, Putz-Kringel, Staub) – einmal erzeugen ----------
 function scratchTexture() {
   const S = 680, c = document.createElement('canvas');
   c.width = c.height = S;
-  const g = c.getContext('2d');
+  const g = c.getContext('2d'), r = rng(5);
   g.lineCap = 'round';
-  for (let i = 0; i < 420; i++) { // feine gerade Haarlinien
-    const x = Math.random() * S, y = Math.random() * S, len = 6 + Math.random() * Math.random() * 90, a = Math.random() * Math.PI;
-    g.strokeStyle = `rgba(255,255,255,${0.14 + Math.random() * 0.4})`;
-    g.lineWidth = Math.random() < 0.8 ? 1.2 : 2;
+  for (let i = 0; i < 420; i++) {
+    const x = r() * S, y = r() * S, len = 6 + r() * r() * 90, a = r() * Math.PI;
+    g.strokeStyle = `rgba(255,255,255,${0.14 + r() * 0.4})`;
+    g.lineWidth = r() < 0.8 ? 1.2 : 2;
     g.beginPath(); g.moveTo(x, y);
-    g.quadraticCurveTo(x + Math.cos(a) * len / 2 + (Math.random() - 0.5) * 6, y + Math.sin(a) * len / 2 + (Math.random() - 0.5) * 6, x + Math.cos(a) * len, y + Math.sin(a) * len);
+    g.quadraticCurveTo(x + Math.cos(a) * len / 2 + (r() - 0.5) * 6, y + Math.sin(a) * len / 2 + (r() - 0.5) * 6, x + Math.cos(a) * len, y + Math.sin(a) * len);
     g.stroke();
   }
-  for (let k = 0; k < 2; k++) { // kreisförmige Wischspuren vom Putzen
-    const cx = Math.random() * S, cy = Math.random() * S;
+  for (let k = 0; k < 2; k++) {
+    const cx = r() * S, cy = r() * S;
     for (let i = 0; i < 80; i++) {
-      const r = 40 + Math.random() * S * 0.6, a0 = Math.random() * Math.PI * 2;
-      g.strokeStyle = `rgba(255,255,255,${0.06 + Math.random() * 0.16})`;
+      const rad = 40 + r() * S * 0.6, a0 = r() * Math.PI * 2;
+      g.strokeStyle = `rgba(255,255,255,${0.06 + r() * 0.16})`;
       g.lineWidth = 1.1;
-      g.beginPath(); g.arc(cx, cy, r, a0, a0 + 0.08 + Math.random() * 0.45); g.stroke();
+      g.beginPath(); g.arc(cx, cy, rad, a0, a0 + 0.08 + r() * 0.45); g.stroke();
     }
   }
-  for (let i = 0; i < 220; i++) { // Staub und winzige Punkte
-    g.fillStyle = `rgba(255,255,255,${0.1 + Math.random() * 0.45})`;
-    const r = Math.random() < 0.9 ? 1 : 1.8;
-    g.beginPath(); g.arc(Math.random() * S, Math.random() * S, r, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < 220; i++) {
+    g.fillStyle = `rgba(255,255,255,${0.1 + r() * 0.45})`;
+    g.beginPath(); g.arc(r() * S, r() * S, r() < 0.9 ? 1 : 1.8, 0, Math.PI * 2); g.fill();
+  }
+  return c.toDataURL('image/png');
+}
+
+// ---------- Gebrauchsspuren: Abrieb an Kanten und Ecken, Fingerabdruck, Staub ----------
+function wearTexture(seed) {
+  const W = 640, H = 584, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d'), r = rng(seed);
+  g.lineCap = 'round';
+  const line = (x, y, a, len, alpha, lw) => {
+    g.strokeStyle = `rgba(255,255,255,${alpha})`; g.lineWidth = lw;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+  };
+  for (let i = 0; i < 320; i++) { // Abrieb an den Kanten (da reibt die Hülle im Regal)
+    const side = Math.floor(r() * 4), along = r(), inset = Math.pow(r(), 2.5) * 0.08, wob = (r() - 0.5) * 0.5;
+    const len = 4 + r() * r() * 46, alpha = 0.1 + r() * 0.35, lw = 1.2 + r() * 1.2;
+    if (side === 0) line(along * W, inset * H, wob, len, alpha, lw);
+    else if (side === 1) line(along * W, H - inset * H, wob, len, alpha, lw);
+    else if (side === 2) line(inset * W, along * H, Math.PI / 2 + wob, len, alpha, lw);
+    else line(W - inset * W, along * H, Math.PI / 2 + wob, len, alpha, lw);
+  }
+  for (const [cx, cy] of [[0, 0], [W, 0], [0, H], [W, H]]) { // abgestoßene Ecken
+    for (let i = 0; i < 45; i++) {
+      const dist = Math.pow(r(), 1.6) * 0.09 * W, a = r() * Math.PI * 2;
+      const x = cx + (cx ? -1 : 1) * Math.abs(Math.cos(a)) * dist, y = cy + (cy ? -1 : 1) * Math.abs(Math.sin(a)) * dist;
+      line(x, y, r() * Math.PI, 2 + r() * 12, 0.15 + r() * 0.4, 1 + r() * 1.4);
+    }
+  }
+  const fx = W * (0.55 + r() * 0.3), fy = H * (0.55 + r() * 0.3); // Fingerabdruck
+  g.save(); g.translate(fx, fy); g.rotate(r() * Math.PI);
+  const sm = g.createRadialGradient(0, 0, 0, 0, 0, 70);
+  sm.addColorStop(0, 'rgba(255,255,255,.07)'); sm.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = sm; g.beginPath(); g.ellipse(0, 0, 70, 56, 0, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 1.3;
+  for (let k = 5; k < 50; k += 3.2) {
+    for (let a = 0; a < Math.PI * 2; a += 0.5 + r() * 0.5) {
+      g.strokeStyle = `rgba(255,255,255,${0.05 + r() * 0.07})`;
+      g.beginPath(); g.ellipse(0, 0, k * 1.25, k, 0, a, a + 0.25 + r() * 0.5); g.stroke();
+    }
+  }
+  g.restore();
+  for (let i = 0; i < 70; i++) { // Staubkörnchen
+    g.fillStyle = `rgba(255,255,255,${0.15 + r() * 0.5})`;
+    g.beginPath(); g.arc(r() * W, r() * H, r() < 0.85 ? 1 : 2, 0, Math.PI * 2); g.fill();
   }
   return c.toDataURL('image/png');
 }
 const TEX = scratchTexture();
+const WEAR = [11, 23, 37].map(wearTexture);
+// feiner Haarriss am Scharnier (klassischer Jewel-Case-Schaden) – nur bei manchen Hüllen
+const CRACK = `<svg class="crack" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M8.2 1.2 L9.6 4.6 L9.2 6.4 L11.4 10.8 L11 12.6"/><path d="M9.6 4.6 L12.4 5.6"/></svg>`;
 
-function face(a, i) {
-  // jede Hülle bekommt einen anderen Ausschnitt der Kratzer-Textur
-  return `<div class="face front" style="--tx:${(i * 137) % 340}px;--ty:${(i * 211) % 340}px">
-    <div class="booklet" style="background-image:url('https://coverartarchive.org/release-group/${a[2]}/front-500')"></div>
-    <div class="hinge"></div>
-    <div class="sheen"></div>
-    <div class="scratch" style="background-image:url(${TEX})"></div>
-    <div class="spot"></div>
+// Vorderseite. full=false: vereinfacht für die Spiegelung
+function lid(a, i, full) {
+  const r = rng(i * 7 + 3);
+  const rot = ((r() - 0.5) * 0.7).toFixed(2), ox = ((r() - 0.5) * 1.2).toFixed(2), oy = ((r() - 0.5) * 1.2).toFixed(2);
+  return `<div class="lid">
+    <div class="tray"></div><div class="ribs"></div><div class="pin a"></div><div class="pin b"></div>
+    <div class="booklet" style="background-image:url('${cover(a, 500)}');--rot:${rot}deg;--ox:${ox}px;--oy:${oy}px"></div>
+    <div class="tab r1"></div><div class="tab r2"></div><div class="tab l1"></div><div class="tab l2"></div>
+    <div class="lip t"></div><div class="lip b"></div>
+    <div class="sheen"></div><div class="uneven"></div>
+    ${full ? `<div class="scratch" style="background-image:url(${TEX});--tx:${(i * 137) % 340}px;--ty:${(i * 211) % 340}px"></div>
+      <div class="wear" style="background-image:url(${WEAR[i % 3]})"></div>
+      ${i % 4 === 2 ? CRACK : ''}<div class="spot"></div>` : ''}
     <div class="rim"></div>
   </div>`;
 }
 
 const stage = document.getElementById('stage');
 stage.innerHTML = ALBUMS.map((a, i) => `<div class="item" data-i="${i}">
-  <div class="jc" style="--img:url('https://coverartarchive.org/release-group/${a[2]}/front-250')">
-    ${face(a, i)}
+  <div class="jc" style="--img:url('${cover(a, 250)}')">
+    <div class="face front">${lid(a, i, true)}</div>
+    <div class="face bev-l"></div><div class="face bev-r"></div>
+    <div class="face side side-l">
+      <div class="inlay"><span class="spine">Green Day · ${a[0]}</span></div>
+      <div class="lidedge"></div><div class="seam"></div><div class="knuckle a"></div><div class="knuckle b"></div><div class="wall"></div>
+    </div>
+    <div class="face side side-r">
+      <div class="inlay"><span class="spine r">Green Day · ${a[0]}</span></div>
+      <div class="lidedge"></div><div class="seam"></div><div class="wall"></div>
+    </div>
+    <div class="face top-f"></div><div class="face bot-f"></div>
     <div class="face back">
       <div class="head"><div><b>${a[0]}</b><span>Green Day</span></div><span class="play"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M7 4v16l13 -8z" fill="currentColor"/></svg></span></div>
       <ol>${TRACKS.map((t) => `<li>${t}</li>`).join('')}</ol>
     </div>
-    <div class="face side-l"><span class="spine">Green Day · ${a[0]}</span></div>
-    <div class="face side-r"></div>
-    <div class="refl"><div class="inner">${face(a, i)}</div></div>
+    <div class="refl"><div class="inner">${lid(a, i, false)}</div></div>
   </div>
 </div>`).join('');
 const els = [...stage.querySelectorAll('.item')];
 
 let pos = 1, target = 1, raf = 0, shown = -1, flipped = -1;
+let mode = 'flow', rx = 4, ry = -32;
+const clampI = (v) => Math.max(0, Math.min(ALBUMS.length - 1, v));
+const size = () => (mode === 'inspect'
+  ? Math.round(Math.min(stage.clientWidth * 0.66, stage.clientHeight * 0.62, 380))
+  : Math.round(Math.min(stage.clientWidth * 0.5, stage.clientHeight * 0.55, 300)));
+
+// Licht: k = wie weit die Hülle seitlich gedreht ist (0 = gerade von vorn)
+function light(el, k, tilt) {
+  const ak = Math.abs(k);
+  el.style.setProperty('--lx', `${(32 - k * 70).toFixed(1)}%`);
+  el.style.setProperty('--ly', `${(20 + Math.min(ak, 2) * 8 - tilt * 1.6).toFixed(1)}%`);
+  el.style.setProperty('--sx', `${(50 + k * 55).toFixed(1)}%`);
+  el.style.setProperty('--ux', `${(50 + k * 95).toFixed(1)}%`);
+  el.style.setProperty('--bvr', (0.12 + 0.42 * Math.max(0, Math.min(1, k))).toFixed(3));
+  el.style.setProperty('--bvl', (0.12 + 0.42 * Math.max(0, Math.min(1, -k))).toFixed(3));
+  el.style.setProperty('--sl', (0.03 + 0.12 * Math.min(1, ak)).toFixed(3));
+}
+
 function layout() {
-  const s = Math.round(Math.min(stage.clientWidth * 0.5, stage.clientHeight * 0.55, 300));
-  const w = s * 1.136;
+  const s = size(), w = s * 1.136;
+  const cur = clampI(Math.round(pos));
   els.forEach((el, i) => {
     const d = i - pos, ad = Math.abs(d);
+    if (mode === 'inspect') {
+      if (i !== cur) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      el.firstElementChild.style.setProperty('--s', `${s}px`);
+      el.style.transform = `translate3d(0,0,${(s * 0.1).toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+      el.style.zIndex = '1000';
+      light(el, -ry / 70, rx);
+      return;
+    }
     if (ad > 6) { el.style.display = 'none'; return; }
     el.style.display = '';
     el.firstElementChild.style.setProperty('--s', `${s}px`);
@@ -189,12 +349,8 @@ function layout() {
     const z = -Math.min(1, ad) * 0.45 * s;
     el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-r * 70).toFixed(2)}deg)`;
     el.style.zIndex = String(1000 - Math.round(ad * 100));
-    // Licht: Glanzpunkt und Glanzstreifen wandern mit der Bewegung über die Hülle
-    el.style.setProperty('--lx', `${(32 - d * 70).toFixed(1)}%`);
-    el.style.setProperty('--ly', `${(20 + Math.min(ad, 2) * 8).toFixed(1)}%`);
-    el.style.setProperty('--sx', `${(50 + d * 55).toFixed(1)}%`);
+    light(el, d, 0);
   });
-  const cur = Math.max(0, Math.min(ALBUMS.length - 1, Math.round(pos)));
   if (cur !== shown) {
     shown = cur;
     document.getElementById('t').textContent = ALBUMS[cur][0];
@@ -211,17 +367,28 @@ function animate() {
   };
   raf = requestAnimationFrame(step);
 }
+function toggleFlip(i) {
+  if (flipped === i) { els[i].classList.remove('flipped'); flipped = -1; }
+  else { if (flipped >= 0) els[flipped].classList.remove('flipped'); els[i].classList.add('flipped'); flipped = i; }
+}
+
 let drag = null;
 stage.addEventListener('pointerdown', (e) => {
   cancelAnimationFrame(raf);
-  drag = { x: e.clientX, pos, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.item') };
-  stage.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, y: e.clientY, pos, rx, ry, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, item: e.target.closest('.item') };
+  try { stage.setPointerCapture(e.pointerId); } catch {}
 });
 stage.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  const dx = e.clientX - drag.x;
-  if (Math.abs(dx) > 6) drag.moved = true;
-  const s = Math.min(stage.clientWidth * 0.5, stage.clientHeight * 0.55, 300) * 0.34;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) > 6 || Math.abs(dy) > 6) drag.moved = true;
+  if (mode === 'inspect') { // Hülle frei drehen, um Kanten, Schlitz und Kratzer anzuschauen
+    ry = Math.max(-85, Math.min(85, drag.ry + dx * 0.45));
+    rx = Math.max(-16, Math.min(16, drag.rx - dy * 0.3));
+    layout();
+    return;
+  }
+  const s = size() * 0.34;
   pos = Math.max(-0.4, Math.min(ALBUMS.length - 0.6, drag.pos - dx / s));
   const now = performance.now(), dt = Math.max(1, now - drag.lastT);
   drag.vel = drag.vel * 0.6 + (-(e.clientX - drag.lastX) / s / dt * 1000) * 0.4;
@@ -231,26 +398,36 @@ stage.addEventListener('pointermove', (e) => {
 const end = () => {
   if (!drag) return;
   const d = drag; drag = null;
+  if (mode === 'inspect') { if (!d.moved) toggleFlip(clampI(Math.round(pos))); return; }
   if (!d.moved) {
     const i = d.item ? Number(d.item.dataset.i) : Math.round(pos);
-    if (i === Math.round(target) && Math.abs(pos - i) < 0.3) {
-      if (flipped === i) { els[i].classList.remove('flipped'); flipped = -1; }
-      else { if (flipped >= 0) els[flipped].classList.remove('flipped'); els[i].classList.add('flipped'); flipped = i; }
-    } else { target = i; animate(); }
+    if (i === Math.round(target) && Math.abs(pos - i) < 0.3) toggleFlip(i);
+    else { target = i; animate(); }
     return;
   }
-  target = Math.max(0, Math.min(ALBUMS.length - 1, Math.round(pos + Math.max(-6, Math.min(6, d.vel * 0.22)))));
+  target = clampI(Math.round(pos + Math.max(-6, Math.min(6, d.vel * 0.22))));
   animate();
 };
 stage.addEventListener('pointerup', end);
 stage.addEventListener('pointercancel', end);
 window.addEventListener('resize', layout);
 
-// Kratzer-Stärke umschalten
-document.getElementById('sk').addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  document.querySelectorAll('#sk button').forEach((x) => x.classList.toggle('on', x === b));
-  document.documentElement.style.setProperty('--sk', b.dataset.v);
+function seg(id, fn) {
+  document.getElementById(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.toggle('on', x === b));
+    fn(b.dataset.v);
+  });
+}
+seg('sk', (v) => document.documentElement.style.setProperty('--sk', v));
+seg('mode', (v) => {
+  cancelAnimationFrame(raf);
+  mode = v;
+  pos = target = clampI(Math.round(pos));
+  rx = 4; ry = -32;
+  stage.classList.toggle('inspect', v === 'inspect');
+  document.getElementById('hint').textContent = v === 'inspect' ? 'Ziehen zum Drehen · Tippen zum Umdrehen' : 'Wischen zum Blättern · Tippen zum Umdrehen';
+  layout();
 });
 layout();
 </script>

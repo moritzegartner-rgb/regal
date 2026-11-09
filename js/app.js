@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage, sleep } from './util.js';
 
-const APP_VERSION = '2.11.0';
+const APP_VERSION = '2.12.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -251,7 +251,7 @@ function render() {
   const key = r.join('/');
   if (key !== lastPage) { window.scrollTo(0, 0); prevPage = lastPage; lastPage = key; }
   const [page, id] = r;
-  if (SHELF.ghost && page !== 'flow') { SHELF.ghost.remove(); SHELF.ghost = null; }
+  if (SHELF.layer && !((page === 'flow' && SHELF.layer.dir === 'in') || (page === '' && SHELF.layer.dir === 'out'))) trCleanup();
   document.body.classList.toggle('flow-page', page === 'flow');
   document.body.classList.toggle('shelf-page', page === '');
   if (page === '') renderShelf();
@@ -270,7 +270,7 @@ function render() {
 // 0) Startbildschirm: CD-Regal – eine Reihe pro Interpret, alle Studioalben als CD-Rücken
 //    (eigene farbig, fehlende grau). Antippen öffnet den Interpreten im Cover Flow.
 // =====================================================================
-const SHELF = { scroll: 0, io: null, morph: null, ghost: null, enter: null, leaving: false };
+const SHELF = { scroll: 0, io: null, layer: null }; // layer: Ebene beim Übergang zum/vom Cover Flow
 
 function shelfSize() {
   const el = $('#shelf');
@@ -323,72 +323,136 @@ function shelfApplyScan(inl, sc) {
   inl.parentElement.classList.add('scan');
 }
 
+// Übergang Regal ↔ Cover Flow – nahtlos:
+// Die Seite, die man verlässt, wandert unverändert in eine Ebene (über bzw. hinter der neuen Seite). Die neue Seite wird
+// aufgebaut, während das Bild still steht, erst dann beginnt die Bewegung. Die CDs starten bzw. enden flach genau auf
+// ihren Rücken im Regal; der Wechsel zwischen Regal-Rücken und 3D-Hülle wird pro CD weich überblendet.
+const TR = { inD: 820, outD: 620, stag: 30, xfade: 170 };
+const trDelay = (i, cur) => Math.min(6, Math.abs(i - cur)) * TR.stag;
+const nextFrames = (n = 2) => new Promise((res) => { const f = () => (--n > 0 ? requestAnimationFrame(f) : res()); requestAnimationFrame(f); });
+
+function trLayer(kind, els) {
+  const layer = document.createElement('div');
+  layer.className = `tr-layer ${kind}`;
+  const scrolled = document.body.classList.contains('scrolled');
+  const items = els.filter(Boolean).map((el) => ({ el, r: el.getBoundingClientRect(), sl: [...el.querySelectorAll('.sh-spines')].map((x) => x.scrollLeft) }));
+  for (const { el, r, sl } of items) {
+    Object.assign(el.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` });
+    if (el.classList.contains('navbar') && scrolled) el.classList.add('keep-bg');
+    layer.appendChild(el);
+    el.querySelectorAll('.sh-spines').forEach((x, k) => { x.scrollLeft = sl[k] || 0; });
+  }
+  document.body.appendChild(layer);
+  return layer;
+}
+function trCleanup() {
+  SHELF.layer?.el.remove();
+  SHELF.layer = null;
+}
+const fadeTo = (el, to, opt) => el?.animate([{ opacity: to ? 0 : 1 }, { opacity: to }], { easing: 'ease-out', fill: to ? 'backwards' : 'forwards', ...opt });
+const spineCenters = (row) => [...row.querySelectorAll('.sh-sp')].map((sp) => { const r = sp.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+
+// Regal → Cover Flow
 function shelfOpen(row) {
-  if (SHELF.leaving) return;
-  SHELF.leaving = true;
+  const shelf = $('#shelf');
+  if (SHELF.layer || !shelf) return;
   SHELF.scroll = window.scrollY;
-  const spines = [...row.querySelectorAll('.sh-sp')];
-  SHELF.morph = {
-    key: row.dataset.key,
-    pts: spines.map((sp) => { const r = sp.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
-    h: spines[0]?.getBoundingClientRect().height || 0,
-  };
+  SHELF.layer = { el: trLayer('over', [shelf, $('#view > .navbar')]), key: row.dataset.key, row, dir: 'in' };
+  location.hash = `#/flow/${enc(row.dataset.key)}`;
+}
+async function trIn(L) {
+  const { row } = L;
+  const pts = spineCenters(row);
+  const h = row.querySelector('.sh-sp')?.getBoundingClientRect().height || 0;
+  const news = [$('#view > .navbar'), $('.cf-info'), $('.cf-extra'), ...document.querySelectorAll('.cf-nb')].filter(Boolean);
+  if (!h) { trCleanup(); return; }
+  news.forEach((el) => { el.style.opacity = '0'; }); // Anfangsbild = Regal
+  cfMorphSet(pts, h, 0);
+  await nextFrames(2); // Cover Flow ist jetzt gezeichnet (unter dem Regal) – erst jetzt bewegen
+  if (SHELF.layer !== L || CF.morph?.pts !== pts) { news.forEach((el) => { el.style.opacity = ''; }); return; }
+  const cur = Math.round(CF.pos);
   const top = row.getBoundingClientRect().top;
-  document.querySelectorAll('.sh-row').forEach((r) => {
+  L.el.querySelectorAll('.sh-row').forEach((r) => {
     if (r === row) return;
     const up = r.getBoundingClientRect().top < top;
-    r.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${up ? -24 : 24}px)` }],
-      { duration: 260, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+    r.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${up ? -26 : 26}px)` }],
+      { duration: 340, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' });
   });
-  setTimeout(() => {
-    // Abbild der Reihe: bleibt kurz stehen und blendet aus, während die CDs herausdrehen
-    const r = row.getBoundingClientRect();
-    const g = row.cloneNode(true);
-    g.removeAttribute('data-action');
-    g.classList.add('sh-ghost');
-    Object.assign(g.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` });
-    const sh = $('#shelf');
-    g.style.setProperty('--spH', sh?.style.getPropertyValue('--spH') || '');
-    g.style.setProperty('--spW', sh?.style.getPropertyValue('--spW') || '');
-    document.body.appendChild(g);
-    g.querySelector('.sh-spines').scrollLeft = row.querySelector('.sh-spines')?.scrollLeft || 0;
-    SHELF.ghost = g;
-    SHELF.leaving = false;
-    location.hash = `#/flow/${enc(row.dataset.key)}`;
-  }, 230);
+  fadeTo(row.querySelector('.sh-head'), 0, { duration: 240 });
+  fadeTo(row.querySelector('.sh-floor'), 0, { duration: 320 });
+  fadeTo(L.el.querySelector('.navbar'), 0, { duration: 300 });
+  row.querySelectorAll('.sh-sp').forEach((sp, k) => {
+    const flies = pts[k] && CF.els[k] && CF.els[k].style.display !== 'none';
+    fadeTo(sp, 0, flies ? { duration: TR.xfade, delay: trDelay(k, cur) + 30 } : { duration: 320 });
+  });
+  news.forEach((el) => { fadeTo(el, 1, { duration: 360, delay: el.classList.contains('navbar') ? 160 : 520 }); el.style.opacity = ''; });
+  await cfMorphRun('in');
+  if (SHELF.layer === L) trCleanup();
 }
 
-// Abbild der Reihe ausblenden (die CDs, die gerade herausdrehen, sind darin schon unsichtbar)
-function shelfGhostOut() {
-  const g = SHELF.ghost;
-  SHELF.ghost = null;
-  if (!g) return;
-  if (CF.morph) g.querySelectorAll('.sh-sp').forEach((sp, k) => { if (CF.els[k] && CF.els[k].style.display !== 'none' && CF.morph.pts[k]) sp.style.visibility = 'hidden'; });
-  const a = g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 380, easing: 'ease-out', fill: 'forwards' });
-  a.finished.then(() => g.remove(), () => g.remove());
-}
-
-// k pro Hülle: 0 = Rücken im Regal, 1 = Platz im Cover Flow
-function cfMorph(dir, m) {
-  const stage = $('#cf-stage');
-  if (!stage) return Promise.resolve();
-  const r = stage.getBoundingClientRect();
-  const tok = {};
-  const D = dir === 'in' ? 780 : 560;
+// Cover Flow → Regal
+async function trOut(L, rows) {
+  const target = rows.find((r) => r.dataset.key === L.key);
+  const nav = $('#view > .navbar');
+  const all = [nav, ...rows].filter(Boolean);
+  if (!target || !$('#cf-stage')) { trCleanup(); return; }
+  // Reihe des Interpreten sichtbar machen (z. B. nach dem Wechsel zu einem Nachbarn)
+  const tr = target.getBoundingClientRect();
+  if (tr.top < 70 || tr.bottom > window.innerHeight - 20) window.scrollTo(0, Math.max(0, window.scrollY + tr.top - window.innerHeight * 0.35));
+  const spines = [...target.querySelectorAll('.sh-sp')];
+  all.forEach((el) => { el.style.opacity = '0'; }); // Anfangsbild = Cover Flow (liegt dahinter)
+  const pts = spineCenters(target);
+  const h = spines[0]?.getBoundingClientRect().height || 0;
+  if (!h) { all.forEach((el) => { el.style.opacity = ''; }); trCleanup(); return; }
+  cfMorphSet(pts, h, 1);
+  await nextFrames(2);
+  if (SHELF.layer !== L) { all.forEach((el) => { el.style.opacity = ''; }); return; }
   const cur = Math.round(CF.pos);
-  CF.morph = { tok, pts: m.pts, h: m.h, bx: r.left + r.width / 2, by: r.top + r.height * 0.42, ks: CF.els.map(() => (dir === 'in' ? 0 : 1)) };
+  L.el.querySelectorAll('.navbar, .cf-info, .cf-extra, .cf-nb').forEach((el) => fadeTo(el, 0, { duration: 260 }));
+  const ty = target.getBoundingClientRect().top;
+  rows.forEach((r) => {
+    if (r === target) return;
+    const up = r.getBoundingClientRect().top < ty;
+    r.animate([{ opacity: 0, transform: `translateY(${up ? -26 : 26}px)` }, { opacity: 1, transform: 'none' }],
+      { duration: 420, delay: TR.outD * 0.45, easing: 'cubic-bezier(.2,0,.2,1)', fill: 'backwards' });
+  });
+  fadeTo(nav, 1, { duration: 320, delay: 120 });
+  fadeTo(target.querySelector('.sh-head'), 1, { duration: 320, delay: TR.outD * 0.55 });
+  fadeTo(target.querySelector('.sh-floor'), 1, { duration: 320, delay: TR.outD * 0.5 });
+  spines.forEach((sp, k) => {
+    const flies = pts[k] && CF.els[k] && CF.els[k].style.display !== 'none';
+    // landende CD: der Regal-Rücken blendet genau dann ein, wenn sie ankommt
+    fadeTo(sp, 1, flies ? { duration: TR.xfade, delay: trDelay(k, cur) + TR.outD - TR.xfade } : { duration: 320, delay: TR.outD * 0.5 });
+  });
+  all.forEach((el) => { el.style.opacity = ''; });
+  await cfMorphRun('out');
+  if (SHELF.layer === L) trCleanup();
+}
+
+// k pro Hülle: 0 = flach auf dem Rücken im Regal, 1 = Platz im Cover Flow
+function cfMorphSet(pts, h, k) {
+  const stage = $('#cf-stage');
+  if (!stage) return;
+  const r = stage.getBoundingClientRect();
+  CF.morph = { tok: {}, pts, h, bx: r.left + r.width / 2, by: r.top + r.height * 0.42, ks: CF.els.map(() => k) };
   cfLayout();
+}
+function cfMorphRun(dir) {
+  const m = CF.morph;
+  if (!m) return Promise.resolve();
+  const D = dir === 'in' ? TR.inD : TR.outD;
+  const cur = Math.round(CF.pos);
+  const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2); // sanft los, sanft an
   return new Promise((res) => {
     const t0 = performance.now();
     const step = (now) => {
-      if (CF.morph?.tok !== tok) { res(); return; }
+      if (CF.morph !== m) { res(); return; }
       const t = now - t0;
       let done = true;
-      CF.morph.ks = CF.els.map((_, i) => {
-        const p = Math.max(0, Math.min(1, (t - Math.min(6, Math.abs(i - cur)) * 34) / D)); // nahe zuerst
+      m.ks = CF.els.map((_, i) => {
+        const p = Math.max(0, Math.min(1, (t - trDelay(i, cur)) / D));
         if (p < 1) done = false;
-        if (dir === 'in') return 1 - Math.pow(1 - p, 4); // schnell heraus, weich ankommen
-        return 1 - (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+        return dir === 'in' ? ease(p) : 1 - ease(p);
       });
       cfLayout();
       if (!done) { requestAnimationFrame(step); return; }
@@ -397,6 +461,15 @@ function cfMorph(dir, m) {
     };
     requestAnimationFrame(step);
   });
+}
+
+// Spiegelung erst einblenden, wenn die CD aus dem Regal heraus ist (im Regal gibt es keine)
+function cfMirror(el, v) {
+  if (el._mo === v) return;
+  el._mo = v;
+  const jc = el.firstElementChild;
+  if (!jc) return;
+  for (const f of (jc._mf ||= [...jc.querySelectorAll('.mirror > *')])) f.style.opacity = v;
 }
 
 function renderShelf() {
@@ -425,23 +498,8 @@ function renderShelf() {
   }, { rootMargin: '200px 0px' });
   rows.forEach((el) => SHELF.io.observe(el));
   if (SHELF.scroll) window.scrollTo(0, SHELF.scroll); // zurück an die Stelle, von der aus du einen Interpreten geöffnet hast
-  const en = SHELF.enter;
-  SHELF.enter = null;
-  if (en) {
-    const target = rows.find((r) => r.dataset.key === en.key);
-    const ty = target?.getBoundingClientRect().top ?? 0;
-    rows.forEach((r) => {
-      if (r === target) return;
-      const up = r.getBoundingClientRect().top < ty;
-      r.animate([{ opacity: 0, transform: `translateY(${up ? -24 : 24}px)` }, { opacity: 1, transform: 'none' }],
-        { duration: 420, delay: 40, easing: 'cubic-bezier(0,0,.2,1)', fill: 'backwards' });
-    });
-    if (target) {
-      target.querySelector('.sh-head')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, fill: 'backwards' });
-      // CDs, die nicht mitgeflogen sind (lagen außerhalb des Bildschirms), blenden ein
-      target.querySelectorAll('.sh-sp').forEach((sp, k) => { if (!en.shown[k]) sp.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, fill: 'backwards' }); });
-    }
-  }
+  const L = SHELF.layer;
+  if (L?.dir === 'out' && !L.used) { L.used = true; trOut(L, rows); }
 }
 
 // Diskografie eingetroffen: Reihe neu aufbauen, wenn sich etwas geändert hat
@@ -571,7 +629,9 @@ function renderFlow(level, key = '') {
   if (level === 'albums' && !g) { location.replace('#/'); return; }
   const entries = level === 'artists' ? artistEntries() : albumEntries(g);
   cancelAnimationFrame(CF.openRaf);
-  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1, morph: null });
+  const switchIn = CF.switchIn || 0;
+  CF.fromShelf = switchIn ? CF.fromShelf : prevPage === ''; // kam aus dem Regal (auch nach Wechsel zum Nachbarn)
+  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1, morph: null, switchIn: 0 });
   if (g) state.current = { kind: 'flow', g };
   jewel.initJewel();
 
@@ -600,7 +660,14 @@ function renderFlow(level, key = '') {
     return;
   }
 
+  // Nachbarn im Regal (darüber / darunter)
+  const all = libraryGroups();
+  const gi = all.findIndex((x) => x.key === key);
+  const prevG = level === 'albums' ? all[gi - 1] : null;
+  const nextG = level === 'albums' ? all[gi + 1] : null;
   view().innerHTML = `${nav}
+    <div class="cf-page">
+    ${prevG ? `<button class="cf-nb up" data-action="cf-artist" data-key="${esc(prevG.key)}" data-dir="-1">${icon('chevron', 13, 'cf-nb-ic')}<span>${esc(prevG.name)}</span></button>` : ''}
     <div class="cf-area">
       <div class="cf-stage with-np" id="cf-stage">
         ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none"></div>`).join('')}
@@ -609,6 +676,9 @@ function renderFlow(level, key = '') {
     <div class="cf-info">
       <div class="cf-title"><span class="cf-title-text"></span></div>
       <div class="cf-sub">${EQ}<span class="cf-sub-text"></span></div>
+    </div>
+    <div class="cf-extra">${level === 'albums' ? scrubHtml(entries) : ''}</div>
+    ${nextG ? `<button class="cf-nb down" data-action="cf-artist" data-key="${esc(nextG.key)}" data-dir="1"><span>${esc(nextG.name)}</span>${icon('chevron', 13, 'cf-nb-ic')}</button>` : ''}
     </div>`;
   if (spConnected) npTick();
   CF.els = [...document.querySelectorAll('.cf-item')];
@@ -620,13 +690,16 @@ function renderFlow(level, key = '') {
   cfLayout();
   cfSettle();
   // aus dem Regal gekommen: die CDs drehen sich aus ihren Rücken heraus
-  const m = SHELF.morph;
-  if (level === 'albums' && SHELF.ghost && m?.key === key && m.h) {
-    cfMorph('in', m);
-    $('.cf-info')?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
-      { duration: 420, delay: 420, easing: 'ease-out', fill: 'backwards' });
+  const L = SHELF.layer;
+  if (L?.dir === 'in' && !L.used) {
+    L.used = true;
+    if (L.key === key && level === 'albums') trIn(L); else trCleanup();
   }
-  shelfGhostOut();
+  // vom Nachbarn gewechselt: von oben bzw. unten hereingleiten
+  if (switchIn) {
+    $('.cf-page')?.animate([{ transform: `translateY(${switchIn * 110}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
 
   // Diskografie fehlt noch? Laden und fehlende Alben grau dazustellen
   if (level === 'albums' && g.mbid && !discoMem.get(g.mbid)) {
@@ -678,10 +751,13 @@ function cfLayout() {
     if (mp && mo.ks[i] < 1) { // Übergang: vom Rücken im Regal (gleiche Stelle, gleiche Größe) zum Platz im Cover Flow
       const k = mo.ks[i], k0 = mo.h / s, L = (a, b) => a + (b - a) * k;
       const r0 = d > 0.001 ? -90 : 90; // rechts zeigt der rechte Rücken nach vorn, sonst der linke
-      const sc = L(k0, 1).toFixed(4);
-      tf = `translate3d(${L(mp.x - mo.bx, x).toFixed(1)}px,${L(mp.y - mo.by, 0).toFixed(1)}px,${L(-(w / 2) * k0, z).toFixed(1)}px) `
-        + `rotateY(${L(r0, -sg * e * 68).toFixed(2)}deg) scale3d(${sc},${sc},${sc})`;
-    }
+      const sc = L(k0, 1);
+      // am Anfang ganz flach (nur der Rücken, keine schrägen Seiten) – die Tiefe wächst beim Herausdrehen
+      const sx = Math.max(0.002, Math.min(1, k * 2.4));
+      tf = `translate3d(${L(mp.x - mo.bx, x).toFixed(1)}px,${L(mp.y - mo.by, 0).toFixed(1)}px,${L(0, z).toFixed(1)}px) `
+        + `rotateY(${L(r0, -sg * e * 68).toFixed(2)}deg) scale3d(${(sc * sx).toFixed(4)},${sc.toFixed(4)},${sc.toFixed(4)})`;
+      cfMirror(el, Math.max(0, Math.min(1, (k - 0.35) / 0.5)).toFixed(2));
+    } else if (el._mo != null) cfMirror(el, '');
     if (el._tf !== tf) { el._tf = tf; el.style.transform = tf; }
     const zi = 1000 - Math.round(ad * 20);
     if (el._zi !== zi) { el._zi = zi; el.style.zIndex = String(zi); }
@@ -693,6 +769,7 @@ function cfLayout() {
     $('.cf-title-text').textContent = e.title;
     $('.cf-sub-text').textContent = e.sub;
     if (CF.flipped >= 0 && CF.flipped !== cur) cfResetFlip(CF.flipped);
+    cfScrubMark(cur);
     npUpdateView();
   }
   return true;
@@ -813,6 +890,7 @@ function cfSelect(i) {
   if (CF.level === 'artists') { location.hash = `#/flow/${enc(CF.entries[i].key)}`; return; }
   CF.focused = i;
   CF.flipDeg = 0;
+  $('.cf-page')?.classList.add('focus');
   cfBuild(i);
   cfJcTransform(i);
   cfTweenOpen(1);
@@ -824,6 +902,7 @@ function cfUnfocus() {
   if (i < 0) return;
   if (CF.opened === i) cfSetOpen(i, false);
   CF.focused = -1;
+  $('.cf-page')?.classList.remove('focus');
   if (isBack(CF.flipDeg)) cfSetFlip(i, CF.flipDeg + 180); // zurück auf die Vorderseite
   CF.flipDeg = 0;
   cfJcTransform(i);
@@ -913,18 +992,76 @@ async function spotifyAlbumId(artist, title, rgid) {
 
 // Cover Flow verlassen: zurück ins Regal
 function cfLeave(viaBack = false) {
-  if (CF.level !== 'albums' || CF.morph) return;
-  const go = () => {
-    if ((prevPage === '' || viaBack) && history.length > 1) history.back();
-    else location.hash = '#/';
-  };
-  const m = SHELF.morph;
-  if (m?.key === CF.key && m.h && CF.focused < 0 && $('#cf-stage')) {
-    SHELF.enter = { key: m.key, shown: CF.els.map((el) => el.style.display !== 'none') };
-    $('.cf-info')?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
-    cfMorph('out', m).then(go);
-  } else go();
+  if (CF.level !== 'albums' || CF.morph || SHELF.layer || CF.switching) return;
+  const page = $('.cf-page');
+  // Cover Flow wandert unverändert in eine Ebene HINTER die Seite; darüber wird das Regal (erst unsichtbar) aufgebaut
+  if (CF.focused < 0 && page && $('#cf-stage')) SHELF.layer = { el: trLayer('under', [page, $('#view > .navbar')]), key: CF.key, dir: 'out' };
+  if ((CF.fromShelf || viaBack) && history.length > 1) history.back();
+  else location.hash = '#/';
 }
+
+// Zum Nachbarn im Regal wechseln (nach oben wischen = nächster, nach unten = vorheriger)
+function cfSwitchArtist(key, dir) {
+  const page = $('.cf-page');
+  if (!page || !key || CF.morph || SHELF.layer || CF.switching || CF.focused >= 0) return;
+  CF.switching = true;
+  const a = page.animate([{ transform: page.style.transform || 'none', opacity: page.style.opacity || 1 },
+    { transform: `translateY(${-dir * 110}px)`, opacity: 0 }], { duration: 230, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  const go = () => { CF.switching = false; CF.switchIn = dir; location.replace(`#/flow/${enc(key)}`); };
+  a.finished.then(go, go);
+}
+// Finger zieht die Seite nach oben/unten (ohne Nachbarn in der Richtung nur ein wenig)
+function cfVDrag(dy) {
+  const page = $('.cf-page');
+  if (!page) return;
+  const has = dy < 0 ? $('.cf-nb.down') : $('.cf-nb.up');
+  const t = dy * (has ? 0.45 : 0.12);
+  page.style.transform = `translateY(${t.toFixed(1)}px)`;
+  page.style.opacity = String(Math.max(0.4, 1 - Math.abs(t) / 260).toFixed(3));
+}
+function cfVEnd(dy) {
+  const page = $('.cf-page');
+  if (!page) return;
+  const nb = dy < 0 ? $('.cf-nb.down') : $('.cf-nb.up');
+  if (Math.abs(dy) > 70 && nb) { cfSwitchArtist(nb.dataset.key, dy < 0 ? 1 : -1); return; }
+  page.animate([{ transform: page.style.transform || 'none', opacity: page.style.opacity || 1 }, { transform: 'none', opacity: 1 }],
+    { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  page.style.transform = '';
+  page.style.opacity = '';
+}
+
+// ---------- Diskografie-Leiste: ein Punkt pro Studioalbum (voll = deins, hohl = fehlt), mit dem Finger durchfahren ----------
+function scrubHtml(entries) {
+  const n = entries.length;
+  if (n < 2) return '';
+  const yr = (e) => String(e.item?.year || e.album?.year || e.sortYear || '').slice(0, 4);
+  return `<div class="cf-scrub" style="--n:${n}">
+    <div class="cf-scrub-track">${entries.map((e, i) => `<i class="${e.missing ? 'miss' : ''}" data-i="${i}"></i>`).join('')}</div>
+    <div class="cf-scrub-years"><span>${esc(yr(entries[0]))}</span><span>${esc(yr(entries[n - 1]))}</span></div>
+  </div>`;
+}
+function cfScrubMark(i) {
+  const t = $('.cf-scrub-track');
+  if (!t) return;
+  t.querySelector('i.on')?.classList.remove('on');
+  t.children[i]?.classList.add('on');
+}
+let scrub = null;
+function scrubTo(x) {
+  let best = 0, bd = Infinity;
+  scrub.dots.forEach((cx, i) => { const dd = Math.abs(cx - x); if (dd < bd) { bd = dd; best = i; } });
+  if (best !== CF.target) { CF.pending = -1; cfGo(best); }
+}
+document.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.cf-scrub');
+  if (!el || CF.focused >= 0 || CF.morph) return;
+  scrub = { id: e.pointerId, dots: [...el.querySelectorAll('.cf-scrub-track i')].map((d) => { const r = d.getBoundingClientRect(); return r.left + r.width / 2; }) };
+  try { el.setPointerCapture(e.pointerId); } catch {}
+  scrubTo(e.clientX);
+});
+document.addEventListener('pointermove', (e) => { if (scrub && e.pointerId === scrub.id) scrubTo(e.clientX); });
+document.addEventListener('pointerup', (e) => { if (scrub && e.pointerId === scrub.id) scrub = null; });
+document.addEventListener('pointercancel', () => { scrub = null; });
 
 // Eine Ebene zurück (ins Dunkle tippen, Escape)
 function cfStepBack() {
@@ -937,17 +1074,17 @@ function cfStepBack() {
 // ---------- Wischen und Tippen ----------
 // Die ganze Seite hört zu, damit „ins Dunkle tippen“ überall klappt – Knöpfe, Kopfzeile und Player ausgenommen.
 let cfDrag = null;
-const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, [data-action], a, input, select, textarea, label');
+const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, .cf-scrub, .tr-layer, [data-action], a, input, select, textarea, label');
 document.addEventListener('pointerdown', (e) => {
   const stage = $('#cf-stage');
   if (!stage || CF.morph || jewel.bookletOpen() || cfIgnore(e.target)) return;
   if (CF.focused < 0 && !stage.contains(e.target)) { // Übersicht: neben der Bühne ins Dunkle tippen = zurück ins Regal
-    cfDrag = { outside: true, x: e.clientX, y: e.clientY, cx: e.clientX, moved: false };
+    cfDrag = { outside: true, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, moved: false, lock: '' };
     return;
   }
   cancelAnimationFrame(CF.raf);
   cfDrag = {
-    x: e.clientX, y: e.clientY, cx: e.clientX, pos: CF.pos, deg: CF.flipDeg, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false,
+    x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, pos: CF.pos, deg: CF.flipDeg, lastX: e.clientX, lastT: performance.now(), vel: 0, moved: false, lock: '',
     item: e.target.closest('.cf-item'), inJc: !!e.target.closest('.jc'), inLid: !!e.target.closest('.lidg'),
   };
   try { stage.setPointerCapture(e.pointerId); } catch {}
@@ -957,7 +1094,11 @@ document.addEventListener('pointermove', (e) => {
   const dx = e.clientX - cfDrag.x;
   const dy = e.clientY - cfDrag.y;
   cfDrag.cx = e.clientX;
+  cfDrag.cy = e.clientY;
   if (Math.abs(dx) > 6 || Math.abs(dy) > 6) cfDrag.moved = true;
+  // Übersicht: Richtung festlegen – senkrecht = zum Nachbarn im Regal, waagerecht = blättern
+  if (CF.focused < 0 && !cfDrag.lock && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) cfDrag.lock = Math.abs(dy) > Math.abs(dx) * 1.2 ? 'v' : 'h';
+  if (cfDrag.lock === 'v') { if (CF.level === 'albums') cfVDrag(dy); return; }
   if (cfDrag.outside) return;
   if (CF.opened >= 0) return; // aufgeklappt: nichts verschieben
   if (CF.focused >= 0) { // ausgewählt: die Hülle folgt beim Umdrehen dem Finger
@@ -968,6 +1109,7 @@ document.addEventListener('pointermove', (e) => {
     jc.style.transform = `rotateY(${(cfDrag.deg + dx * 0.6).toFixed(1)}deg) scale(${FOCUS_SCALE})`;
     return;
   }
+  if (cfDrag.lock !== 'h') return;
   const spacing = CF.size * 0.3;
   CF.pos = Math.max(-0.4, Math.min(CF.entries.length - 0.6, cfDrag.pos - dx / spacing));
   const now = performance.now();
@@ -989,6 +1131,7 @@ const cfEnd = () => {
   cfDrag = null;
   if (!$('#cf-stage')) return;
   const tap = !d.moved;
+  if (d.lock === 'v') { if (CF.level === 'albums') cfVEnd(d.cy - d.y); return; }
   if (d.outside) { if (tap && CF.focused < 0) cfLeave(); return; }
   if (CF.opened >= 0) { // aufgeklappt: Booklet antippen = lesen, CD antippen = drehen und abspielen, ins Dunkle = zuklappen
     if (tap) {
@@ -2458,6 +2601,7 @@ const actions = {
 
   // Regal: Reihe antippen -> Interpret im Cover Flow
   'shelf-open': (el) => shelfOpen(el),
+  'cf-artist': (el) => cfSwitchArtist(el.dataset.key, Number(el.dataset.dir) || 1),
   'cf-more': (el) => {
     const x = flowAlbum(el);
     if (!x) return;

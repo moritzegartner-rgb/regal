@@ -127,8 +127,7 @@ function frontHtml(o, solid) {
     ${solid ? '<div class="tp-ribs"></div>' : ''}<div class="step"></div>
     <div class="booklet${o.img ? '' : ' text'}" style="background-image:${css(o.img)};--rot:${rot}deg;--ox:${ox}px;--oy:${oy}px">${text}</div>
     <div class="ring a"></div><div class="ring b"></div>
-    ${solid ? '' : gloss(o.seed, '', o.seed % 4 === 2)}
-  </div></div>`;
+  </div></div>${solid ? '' : `<div class="face front glf"><div class="glf-in">${gloss(o.seed, '', o.seed % 4 === 2)}</div></div>`}`;
 }
 const LID_INNER = `<div class="face linner"><div class="bpage"></div><div class="lin-hinge"></div>
   <i class="clip t x1"></i><i class="clip t x2"></i><i class="clip b x1"></i><i class="clip b x2"></i><div class="lin-sheen"></div></div>`;
@@ -179,16 +178,40 @@ export function caseHtml(o) {
 }
 
 // Licht: k = wie weit die Hülle seitlich gedreht ist (0 = gerade von vorn)
-export function light(el, k, tilt = 0) {
+// Die Werte kommen direkt an die Teile, die sie benutzen (nicht an die ganze Hülle – sonst rechnet der Browser
+// bei jedem Bild alle ~150 Teile neu). back=true: auch die Rückseite (nur nötig, wenn die Hülle umgedreht werden kann).
+function lightTargets(jc) {
+  if (jc._lt) return jc._lt;
+  const all = (sel) => [...jc.querySelectorAll(sel)];
+  jc._lt = {
+    front: all('.glf .gloss'), back: all('.back .gloss'), bev: all('.bev.fr'), lip: all('.rim-r, .lside-r, .lside-l'),
+    wall: all('.side .wall'), disc: all('.disc'), last: {},
+  };
+  return jc._lt;
+}
+function setVar(t, list, name, v, key = '') {
+  if (t.last[key + name] === v) return;
+  t.last[key + name] = v;
+  for (const el of list) el.style.setProperty(name, v);
+}
+export function light(el, k, tilt = 0, back = false) {
+  const jc = el.classList.contains('jc') ? el : el.firstElementChild;
+  if (!jc) return;
+  const t = lightTargets(jc);
   const ak = Math.abs(k);
-  el.style.setProperty('--lx', `${(32 - k * 70).toFixed(1)}%`);
-  el.style.setProperty('--ly', `${(20 + Math.min(ak, 2) * 8 - tilt * 1.6).toFixed(1)}%`);
-  el.style.setProperty('--sx', `${(50 + k * 55).toFixed(1)}%`);
-  el.style.setProperty('--ux', `${(50 + k * 95).toFixed(1)}%`);
-  el.style.setProperty('--bvr', (0.12 + 0.42 * Math.max(0, Math.min(1, k))).toFixed(3));
-  el.style.setProperty('--sl', (0.03 + 0.12 * Math.min(1, ak)).toFixed(3));
-  el.style.setProperty('--lip', (0.2 + 0.3 * (0.5 + 0.5 * Math.sin(k * 2.2 + 0.6))).toFixed(3));
-  el.style.setProperty('--da', `${(k * 120).toFixed(0)}deg`);
+  const lx = `${(32 - k * 70).toFixed(1)}%`, ly = `${(20 + Math.min(ak, 2) * 8 - tilt * 1.6).toFixed(1)}%`;
+  const sx = `${(50 + k * 55).toFixed(1)}%`, ux = `${(50 + k * 95).toFixed(1)}%`;
+  // Glanz vorne immer, hinten nur bei Bedarf (eigene Merker, damit die Rückseite beim Auswählen sofort stimmt)
+  for (const [list, key] of back ? [[t.front, 'f'], [t.back, 'b']] : [[t.front, 'f']]) {
+    setVar(t, list, '--lx', lx, key);
+    setVar(t, list, '--ly', ly, key);
+    setVar(t, list, '--sx', sx, key);
+    setVar(t, list, '--ux', ux, key);
+  }
+  setVar(t, t.bev, '--bvr', (0.12 + 0.42 * Math.max(0, Math.min(1, k))).toFixed(3));
+  setVar(t, t.wall, '--sl', (0.03 + 0.12 * Math.min(1, ak)).toFixed(3));
+  setVar(t, t.lip, '--lip', (0.2 + 0.3 * (0.5 + 0.5 * Math.sin(k * 2.2 + 0.6))).toFixed(3));
+  setVar(t, t.disc, '--da', `${(k * 120).toFixed(0)}deg`);
 }
 
 // =====================================================================
@@ -530,7 +553,10 @@ export async function openBooklet(sc, front, gray = false, src = null) {
   bvBook.style.setProperty('--par', par.toFixed(3));
   bvBook.style.aspectRatio = String(2 * par);
   bvBook.innerHTML = Array.from({ length: Math.ceil(pages.length / 2) }, () => '<div class="leaf"><div class="pg f"></div><div class="pg b"></div></div>').join('');
+  bvBook.classList.add('still'); // ohne Übergang – sonst gleitet das Buch noch, während der Flug sein Ziel misst
   bvShow();
+  bvBook.getBoundingClientRect();
+  bvBook.classList.remove('still');
   await new Promise((res) => { const im = new Image(); im.onload = res; im.onerror = res; im.src = pages[0].u; });
   if (tok !== bvTok) return;
   const cover = bvBook.querySelector('.leaf .pg.f');

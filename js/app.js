@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
 
-const APP_VERSION = '2.10.0';
+const APP_VERSION = '2.10.1';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -532,11 +532,16 @@ function renderFlow(level, key = '') {
 function cfLayout() {
   const stage = $('#cf-stage');
   if (!stage) return false;
-  const s = Math.round(Math.min(stage.clientWidth * 0.44, stage.clientHeight * 0.55, 280));
+  const sw = stage.clientWidth; // einmal lesen – nach dem Schreiben unten würde jedes Lesen das Layout neu erzwingen
+  const s = Math.round(Math.min(sw * 0.44, stage.clientHeight * 0.55, 280));
   CF.size = s;
-  stage.style.setProperty('--s', `${s}px`);
+  if (stage._s !== s) { stage._s = s; stage.style.setProperty('--s', `${s}px`); } // nur bei Änderung (sonst rechnet alles neu)
   const w = s * 1.136;
   const cur = clampCF(Math.round(CF.pos));
+  // Hüllen ganz außerhalb des Bildschirms gar nicht erst zeichnen: Innenkante einer schräg stehenden Hülle
+  // (68°, nach hinten versetzt, Perspektive 820 px) liegt bei (0.2127 + 0.21·|d|)·w·f vom Mittelpunkt
+  const f = 820 / (820 + 0.5 * s + 0.4636 * w);
+  const adVis = Math.min(CF_WINDOW + 0.5, (sw / 2 / (w * f) - 0.2127) / 0.21 + 0.3);
   CF.els.forEach((el, i) => {
     const d = i - CF.pos;
     const ad = Math.abs(d);
@@ -545,7 +550,11 @@ function cfLayout() {
       if (ad > CF_WINDOW * 2) cfTeardown(i); // weit weg: Hülle abbauen (sonst stürzt Safari bei großen Sammlungen ab)
       return;
     }
-    cfBuild(i);
+    cfBuild(i); // schon mal bauen, auch wenn sie noch knapp außerhalb liegt
+    if (ad > adVis && i !== CF.focused) {
+      if (el.style.display !== 'none') el.style.display = 'none';
+      return;
+    }
     if (el.style.display === 'none') el.style.display = '';
     // weich hinaus- und hereindrehen wie beim iPod: Drehung, Versatz und Tiefe folgen derselben sanften Kurve
     const e = Math.sin(Math.min(1, ad) * Math.PI / 2);
@@ -553,11 +562,15 @@ function cfLayout() {
     let x = sg * (e * 0.4 + ad * 0.21) * w;
     let z = -e * 0.5 * s;
     // ein Album ist ausgewählt: die anderen gleiten sanft zur Seite und nach hinten weg
-    if (CF.openK > 0 && i !== cur) { x += sg * CF.openK * stage.clientWidth * 0.9; z -= CF.openK * s * 1.2; }
-    el.style.visibility = CF.openK >= 1 && i !== cur ? 'hidden' : '';
-    el.style.transform = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
-    el.style.zIndex = String(1000 - Math.round(ad * 100));
-    jewel.light(el, d);
+    if (CF.openK > 0 && i !== cur) { x += sg * CF.openK * sw * 0.9; z -= CF.openK * s * 1.2; }
+    // nur schreiben, was sich wirklich ändert
+    const vis = CF.openK >= 1 && i !== cur ? 'hidden' : '';
+    if (el._vis !== vis) { el._vis = vis; el.style.visibility = vis; }
+    const tf = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
+    if (el._tf !== tf) { el._tf = tf; el.style.transform = tf; }
+    const zi = 1000 - Math.round(ad * 20);
+    if (el._zi !== zi) { el._zi = zi; el.style.zIndex = String(zi); }
+    jewel.light(el, d, 0, i === CF.focused);
   });
   if (cur !== CF.shown) {
     CF.shown = cur;
@@ -819,8 +832,14 @@ document.addEventListener('pointermove', (e) => {
   cfDrag.vel = cfDrag.vel * 0.6 + (-(e.clientX - cfDrag.lastX) / spacing / dt * 1000) * 0.4;
   cfDrag.lastX = e.clientX;
   cfDrag.lastT = now;
-  cfLayout();
+  cfQueueLayout();
 });
+// höchstens einmal pro Bild neu anordnen (manche Geräte melden Fingerbewegungen öfter)
+let cfMoveRaf = 0;
+function cfQueueLayout() {
+  if (cfMoveRaf) return;
+  cfMoveRaf = requestAnimationFrame(() => { cfMoveRaf = 0; cfLayout(); });
+}
 const cfEnd = () => {
   if (!cfDrag) return;
   const d = cfDrag;

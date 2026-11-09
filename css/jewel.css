@@ -12,6 +12,9 @@
 .face { position: absolute; top: 0; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 .front, .back, .linner, .bframe, .trayp, .floor { left: calc(var(--b) - var(--e)); width: calc(100% - 2 * var(--b) + 2 * var(--e)); }
 .front { transform: translateZ(calc(var(--t) / 2)); }
+/* Glanz des Deckels: eigene Fläche einen Hauch vor dem Deckel – so malt der Browser beim Blättern nur den Glanz neu */
+.front.glf { transform: translateZ(calc(var(--t) / 2 + .35px)); pointer-events: none; }
+.glf-in { position: absolute; inset: 0; overflow: hidden; border-radius: 1px; }
 .back { transform: rotateY(180deg) translateZ(calc(var(--t) / 2)); }
 
 /* Deckel als eigene Gruppe – dreht sich am Scharnier (linke Kante) auf */
@@ -289,6 +292,7 @@ body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,
 /* aufgeschlagenes Buch: links und rechts je eine Seite, Blätter drehen sich um den Buchrücken in der Mitte */
 .bv-book { position: relative; --par: 1; width: min(96vw, calc(62vh * 2 * var(--par))); perspective: 2200px;
   transition: transform .7s cubic-bezier(.3,.8,.3,1); }
+.bv-book.still, .bv-book.still::before { transition: none; } /* beim Öffnen sofort an Ort und Stelle */
 /* EIN Schatten unter dem ganzen Buch (statt einem pro Seite – die haben sich beim Blättern aufaddiert) */
 .bv-book::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--shl, 50%); right: var(--shr, 0%); z-index: 0;
   box-shadow: 0 16px 44px rgba(0,0,0,.7); transition: left .7s cubic-bezier(.3,.8,.3,1), right .7s cubic-bezier(.3,.8,.3,1); }

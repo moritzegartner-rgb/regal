@@ -6,9 +6,9 @@ import * as mb from './musicbrainz.js';
 import * as gemini from './gemini.js';
 import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
-import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage } from './util.js';
+import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage, sleep } from './util.js';
 
-const APP_VERSION = '2.10.1';
+const APP_VERSION = '2.11.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -251,6 +251,7 @@ function render() {
   const key = r.join('/');
   if (key !== lastPage) { window.scrollTo(0, 0); prevPage = lastPage; lastPage = key; }
   const [page, id] = r;
+  if (SHELF.ghost && page !== 'flow') { SHELF.ghost.remove(); SHELF.ghost = null; }
   document.body.classList.toggle('flow-page', page === 'flow');
   document.body.classList.toggle('shelf-page', page === '');
   if (page === '') renderShelf();
@@ -269,7 +270,7 @@ function render() {
 // 0) Startbildschirm: CD-Regal – eine Reihe pro Interpret, alle Studioalben als CD-Rücken
 //    (eigene farbig, fehlende grau). Antippen öffnet den Interpreten im Cover Flow.
 // =====================================================================
-const SHELF = { scroll: 0, io: null };
+const SHELF = { scroll: 0, io: null, morph: null, ghost: null, enter: null, leaving: false };
 
 function shelfSize() {
   const el = $('#shelf');
@@ -292,6 +293,7 @@ function shelfFill(el, g) {
   el.dataset.n = String(list.length);
   el.innerHTML = `<div class="sh-head"><b>${esc(g.name)}</b><span>${esc(groupSub(g))}</span></div>
     <div class="sh-spines">${list.map((e, k) => shelfSpine(g, e, k)).join('')}</div><div class="sh-floor"></div>`;
+  list.forEach((e, k) => { const sc = jewel.scanCached(entryRgid(e)); if (sc) shelfApplyScan(el.querySelector(`.sh-sp[data-k="${k}"] .sh-in`), sc); });
   if (el.dataset.seen) shelfScans(el);
 }
 
@@ -304,16 +306,97 @@ async function shelfScans(el) {
     if (!rgid) continue;
     const sc = await jewel.findScan(rgid).catch(() => null);
     if (el._list !== list || !el.isConnected) return; // Reihe neu gebaut oder Seite verlassen
-    if (!sc || !(sc.ratio > 1.22)) continue;
-    const inl = el.querySelector(`.sh-sp[data-k="${k}"] .sh-in`);
-    if (!inl) continue;
-    const total = 118 * sc.ratio;
-    const f = Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total)); // Anteil des Rückens am Foto
-    inl.style.backgroundImage = `url("${sc.small}")`;
-    inl.style.backgroundSize = `${(100 / f).toFixed(1)}% 100%`;
-    inl.style.backgroundPosition = '100% 50%';
-    inl.parentElement.classList.add('scan');
+    shelfApplyScan(el.querySelector(`.sh-sp[data-k="${k}"] .sh-in`), sc);
   }
+}
+
+// ---------- Übergang Regal ↔ Cover Flow ----------
+// Hin: die anderen Reihen weichen aus, jede CD der Reihe dreht sich aus ihrem Rücken heraus an ihren Platz im Cover Flow.
+// Zurück: jede CD dreht sich wieder auf den Rücken und fliegt an ihre Stelle im Regal, dann kommen die anderen Reihen zurück.
+function shelfApplyScan(inl, sc) {
+  if (!inl || !sc || !(sc.ratio > 1.22)) return;
+  const total = 118 * sc.ratio;
+  const f = Math.min(0.065, Math.max(0.03, (total - 138) / 2 / total)); // Anteil des Rückens am Foto
+  inl.style.backgroundImage = `url("${sc.small}")`;
+  inl.style.backgroundSize = `${(100 / f).toFixed(1)}% 100%`;
+  inl.style.backgroundPosition = '100% 50%';
+  inl.parentElement.classList.add('scan');
+}
+
+function shelfOpen(row) {
+  if (SHELF.leaving) return;
+  SHELF.leaving = true;
+  SHELF.scroll = window.scrollY;
+  const spines = [...row.querySelectorAll('.sh-sp')];
+  SHELF.morph = {
+    key: row.dataset.key,
+    pts: spines.map((sp) => { const r = sp.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
+    h: spines[0]?.getBoundingClientRect().height || 0,
+  };
+  const top = row.getBoundingClientRect().top;
+  document.querySelectorAll('.sh-row').forEach((r) => {
+    if (r === row) return;
+    const up = r.getBoundingClientRect().top < top;
+    r.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: `translateY(${up ? -24 : 24}px)` }],
+      { duration: 260, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  });
+  setTimeout(() => {
+    // Abbild der Reihe: bleibt kurz stehen und blendet aus, während die CDs herausdrehen
+    const r = row.getBoundingClientRect();
+    const g = row.cloneNode(true);
+    g.removeAttribute('data-action');
+    g.classList.add('sh-ghost');
+    Object.assign(g.style, { left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px` });
+    const sh = $('#shelf');
+    g.style.setProperty('--spH', sh?.style.getPropertyValue('--spH') || '');
+    g.style.setProperty('--spW', sh?.style.getPropertyValue('--spW') || '');
+    document.body.appendChild(g);
+    g.querySelector('.sh-spines').scrollLeft = row.querySelector('.sh-spines')?.scrollLeft || 0;
+    SHELF.ghost = g;
+    SHELF.leaving = false;
+    location.hash = `#/flow/${enc(row.dataset.key)}`;
+  }, 230);
+}
+
+// Abbild der Reihe ausblenden (die CDs, die gerade herausdrehen, sind darin schon unsichtbar)
+function shelfGhostOut() {
+  const g = SHELF.ghost;
+  SHELF.ghost = null;
+  if (!g) return;
+  if (CF.morph) g.querySelectorAll('.sh-sp').forEach((sp, k) => { if (CF.els[k] && CF.els[k].style.display !== 'none' && CF.morph.pts[k]) sp.style.visibility = 'hidden'; });
+  const a = g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 380, easing: 'ease-out', fill: 'forwards' });
+  a.finished.then(() => g.remove(), () => g.remove());
+}
+
+// k pro Hülle: 0 = Rücken im Regal, 1 = Platz im Cover Flow
+function cfMorph(dir, m) {
+  const stage = $('#cf-stage');
+  if (!stage) return Promise.resolve();
+  const r = stage.getBoundingClientRect();
+  const tok = {};
+  const D = dir === 'in' ? 780 : 560;
+  const cur = Math.round(CF.pos);
+  CF.morph = { tok, pts: m.pts, h: m.h, bx: r.left + r.width / 2, by: r.top + r.height * 0.42, ks: CF.els.map(() => (dir === 'in' ? 0 : 1)) };
+  cfLayout();
+  return new Promise((res) => {
+    const t0 = performance.now();
+    const step = (now) => {
+      if (CF.morph?.tok !== tok) { res(); return; }
+      const t = now - t0;
+      let done = true;
+      CF.morph.ks = CF.els.map((_, i) => {
+        const p = Math.max(0, Math.min(1, (t - Math.min(6, Math.abs(i - cur)) * 34) / D)); // nahe zuerst
+        if (p < 1) done = false;
+        if (dir === 'in') return 1 - Math.pow(1 - p, 4); // schnell heraus, weich ankommen
+        return 1 - (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+      });
+      cfLayout();
+      if (!done) { requestAnimationFrame(step); return; }
+      if (dir === 'in') { CF.morph = null; cfLayout(); }
+      res();
+    };
+    requestAnimationFrame(step);
+  });
 }
 
 function renderShelf() {
@@ -326,8 +409,7 @@ function renderShelf() {
     actions: `<button class="glass-btn round" data-action="add-menu" aria-label="CDs hinzufügen">${icon('plus', 24)}</button>`,
   });
   view().innerHTML = `${nav}
-    <div class="shelf" id="shelf">${groups.map((g) => `<section class="sh-row" data-action="shelf-open" data-key="${esc(g.key)}"></section>`).join('')}</div>
-    ${spConnected ? `<div hidden>${npHtml()}</div>` : ''}`;
+    <div class="shelf" id="shelf">${groups.map((g) => `<section class="sh-row" data-action="shelf-open" data-key="${esc(g.key)}"></section>`).join('')}</div>`;
   shelfSize();
   const rows = [...document.querySelectorAll('.sh-row')];
   rows.forEach((el, i) => shelfFill(el, groups[i]));
@@ -343,6 +425,23 @@ function renderShelf() {
   }, { rootMargin: '200px 0px' });
   rows.forEach((el) => SHELF.io.observe(el));
   if (SHELF.scroll) window.scrollTo(0, SHELF.scroll); // zurück an die Stelle, von der aus du einen Interpreten geöffnet hast
+  const en = SHELF.enter;
+  SHELF.enter = null;
+  if (en) {
+    const target = rows.find((r) => r.dataset.key === en.key);
+    const ty = target?.getBoundingClientRect().top ?? 0;
+    rows.forEach((r) => {
+      if (r === target) return;
+      const up = r.getBoundingClientRect().top < ty;
+      r.animate([{ opacity: 0, transform: `translateY(${up ? -24 : 24}px)` }, { opacity: 1, transform: 'none' }],
+        { duration: 420, delay: 40, easing: 'cubic-bezier(0,0,.2,1)', fill: 'backwards' });
+    });
+    if (target) {
+      target.querySelector('.sh-head')?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, fill: 'backwards' });
+      // CDs, die nicht mitgeflogen sind (lagen außerhalb des Bildschirms), blenden ein
+      target.querySelectorAll('.sh-sp').forEach((sp, k) => { if (!en.shown[k]) sp.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, fill: 'backwards' }); });
+    }
+  }
 }
 
 // Diskografie eingetroffen: Reihe neu aufbauen, wenn sich etwas geändert hat
@@ -418,8 +517,7 @@ function cfButtons(i, e) {
   const wished = e.missing && isWished(`mb:${e.album.mbid}`);
   return `<button class="bk-btn list" data-action="jc-list" aria-label="Titelliste">${icon('list', 18)}</button>
     ${e.missing ? `<button class="bk-btn wish ${wished ? 'on' : ''}" data-action="cf-wish" data-i="${i}" aria-label="Wunschliste">${icon('heart', 18)}</button>` : ''}
-    <button class="bk-btn more" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>
-    <button class="bk-btn play" ${spData(sp)} data-action="sp-play" aria-label="Abspielen">${icon('play', 18)}</button>`;
+    <button class="bk-btn more" data-action="cf-more" data-i="${i}" aria-label="Mehr">${icon('more', 18)}</button>`;
 }
 
 // Hülle erst bauen, wenn sie in die Nähe kommt (spart Speicher bei großen Sammlungen)
@@ -441,6 +539,8 @@ function cfBuild(i) {
   if (artists) return;
   const rgid = entryRgid(e);
   if (!rgid) return;
+  const known = jewel.scanCached(rgid);
+  if (known !== undefined) { if (known) jewel.applyScan(el.firstElementChild, known); return; }
   // echte Fotos (Rückseite, Rücken, Innenseite, CD, Booklet) suchen und einsetzen
   jewel.findScan(rgid).then((sc) => {
     if (sc && CF.els[i] === el && el.dataset.built) jewel.applyScan(el.firstElementChild, sc);
@@ -471,7 +571,7 @@ function renderFlow(level, key = '') {
   if (level === 'albums' && !g) { location.replace('#/'); return; }
   const entries = level === 'artists' ? artistEntries() : albumEntries(g);
   cancelAnimationFrame(CF.openRaf);
-  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1 });
+  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1, morph: null });
   if (g) state.current = { kind: 'flow', g };
   jewel.initJewel();
 
@@ -502,15 +602,14 @@ function renderFlow(level, key = '') {
 
   view().innerHTML = `${nav}
     <div class="cf-area">
-      <div class="cf-stage ${spConnected ? 'with-np' : ''}" id="cf-stage">
+      <div class="cf-stage with-np" id="cf-stage">
         ${entries.map((e, i) => `<div class="cf-item ${e.missing ? 'missing' : ''}" data-i="${i}" style="display:none"></div>`).join('')}
       </div>
     </div>
     <div class="cf-info">
       <div class="cf-title"><span class="cf-title-text"></span></div>
       <div class="cf-sub">${EQ}<span class="cf-sub-text"></span></div>
-    </div>
-    ${spConnected ? npHtml() : ''}`;
+    </div>`;
   if (spConnected) npTick();
   CF.els = [...document.querySelectorAll('.cf-item')];
   // dort weitermachen, wo man zuletzt war
@@ -520,6 +619,14 @@ function renderFlow(level, key = '') {
   CF.target = start;
   cfLayout();
   cfSettle();
+  // aus dem Regal gekommen: die CDs drehen sich aus ihren Rücken heraus
+  const m = SHELF.morph;
+  if (level === 'albums' && SHELF.ghost && m?.key === key && m.h) {
+    cfMorph('in', m);
+    $('.cf-info')?.animate([{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 420, delay: 420, easing: 'ease-out', fill: 'backwards' });
+  }
+  shelfGhostOut();
 
   // Diskografie fehlt noch? Laden und fehlende Alben grau dazustellen
   if (level === 'albums' && g.mbid && !discoMem.get(g.mbid)) {
@@ -566,7 +673,15 @@ function cfLayout() {
     // nur schreiben, was sich wirklich ändert
     const vis = CF.openK >= 1 && i !== cur ? 'hidden' : '';
     if (el._vis !== vis) { el._vis = vis; el.style.visibility = vis; }
-    const tf = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
+    let tf = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
+    const mo = CF.morph, mp = mo?.pts[i];
+    if (mp && mo.ks[i] < 1) { // Übergang: vom Rücken im Regal (gleiche Stelle, gleiche Größe) zum Platz im Cover Flow
+      const k = mo.ks[i], k0 = mo.h / s, L = (a, b) => a + (b - a) * k;
+      const r0 = d > 0.001 ? -90 : 90; // rechts zeigt der rechte Rücken nach vorn, sonst der linke
+      const sc = L(k0, 1).toFixed(4);
+      tf = `translate3d(${L(mp.x - mo.bx, x).toFixed(1)}px,${L(mp.y - mo.by, 0).toFixed(1)}px,${L(-(w / 2) * k0, z).toFixed(1)}px) `
+        + `rotateY(${L(r0, -sg * e * 68).toFixed(2)}deg) scale3d(${sc},${sc},${sc})`;
+    }
     if (el._tf !== tf) { el._tf = tf; el.style.transform = tf; }
     const zi = 1000 - Math.round(ad * 20);
     if (el._zi !== zi) { el._zi = zi; el.style.zIndex = String(zi); }
@@ -744,10 +859,9 @@ async function cfOpenBooklet(i) {
   jewel.openBooklet(sc, bigCover(e.cover), !!e.missing, src);
 }
 
-// ---------- CD drehen: antippen = langsam anlaufen, ganz schnell, auslaufen (5 s) – und dabei das Album abspielen ----------
+// ---------- CD drehen: antippen = anlaufen, schnell drehen – nach 3 s öffnet sich das Album in Spotify (nur öffnen, nicht abspielen) ----------
 let cdSpin = null;
-const SPIN_MS = 5000;
-const SPIN_EASE = 'cubic-bezier(0.55, 0, 0.45, 1)';
+const SPIN = { up: 1000, hold: 2000, down: 1300, rps: 8 }; // Anlauf, volle Drehzahl, Auslauf (ms), Umdrehungen pro Sekunde
 
 // liegt der Finger auf der CD? (die CD liegt unter dem Rahmen, darum über ihre Lage auf dem Bildschirm prüfen)
 function cfDiscHit(i, x, y) {
@@ -765,22 +879,51 @@ function cfSpinDisc(i) {
   if (!disc || cdSpin?.playState === 'running') return;
   const base = getComputedStyle(disc).transform;
   const pre = base && base !== 'none' ? `${base} ` : '';
-  const turns = 22 * 360;
-  cdSpin = disc.animate([{ transform: `${pre}rotate(0deg)` }, { transform: `${pre}rotate(${turns}deg)` }], { duration: SPIN_MS, easing: SPIN_EASE });
+  // gleichmäßig schneller werden (quadratisch), volle Drehzahl halten, sanft auslaufen – ohne Ruck an den Übergängen
+  const v = (SPIN.rps * 360) / 1000;
+  const A = (v * SPIN.up) / 2, B = A + v * SPIN.hold, C = B + (v * SPIN.down) / 2;
+  const total = SPIN.up + SPIN.hold + SPIN.down;
+  const frames = (sg, p) => [
+    { transform: `${p}rotate(0deg)`, offset: 0, easing: 'cubic-bezier(0.33, 0, 0.67, 0.33)' },
+    { transform: `${p}rotate(${sg * A}deg)`, offset: SPIN.up / total, easing: 'linear' },
+    { transform: `${p}rotate(${sg * B}deg)`, offset: (SPIN.up + SPIN.hold) / total, easing: 'cubic-bezier(0.33, 0.67, 0.67, 1)' },
+    { transform: `${p}rotate(${sg * C}deg)`, offset: 1 },
+  ];
+  cdSpin = disc.animate(frames(1, pre), { duration: total });
   // der Lichtreflex bleibt stehen, während sich die CD darunter dreht
-  try { disc.animate([{ transform: 'rotate(0deg)' }, { transform: `rotate(${-turns}deg)` }], { duration: SPIN_MS, easing: SPIN_EASE, pseudoElement: '::after' }); } catch {}
+  try { disc.animate(frames(-1, ''), { duration: total, pseudoElement: '::after' }); } catch {}
   const e = CF.entries[i];
-  const sp = { artist: state.current?.g?.name || '', title: e.title, sid: albumMem.get(entryRgid(e))?.spotify || '' };
-  // mit Spotify-Verbindung sofort abspielen, sonst nach dem Drehen die Spotify-App öffnen
-  if (spConnected) spotifyPlay(sp);
-  else cdSpin.finished.then(() => { if (CF.opened === i) spotifyPlay(sp); }).catch(() => {});
+  const artist = state.current?.g?.name || '';
+  const idP = spotifyAlbumId(artist, e.title, entryRgid(e)); // schon während des Drehens heraussuchen
+  setTimeout(async () => {
+    if (CF.opened !== i || !$('#cf-stage')) return; // zugeklappt oder weg: nichts öffnen
+    const id = await Promise.race([idP, sleep(2500).then(() => '')]);
+    if (CF.opened !== i || !$('#cf-stage')) return;
+    location.href = id ? `spotify:album:${id}` : spotifyLinks(artist, e.title, '').app;
+  }, SPIN.up + SPIN.hold);
+}
+
+// Spotify-ID eines Albums: von MusicBrainz, sonst (mit Verbindung) über die Spotify-Suche
+async function spotifyAlbumId(artist, title, rgid) {
+  let id = (rgid && albumMem.get(rgid)?.spotify) || '';
+  if (!id && rgid) id = (await loadAlbumDetails(rgid).catch(() => null))?.spotify || '';
+  if (!id && spConnected) id = (await spotify.findAlbum(artist, title).catch(() => '')) || '';
+  return id;
 }
 
 // Cover Flow verlassen: zurück ins Regal
-function cfLeave() {
-  if (CF.level !== 'albums') return;
-  if (prevPage === '') history.back();
-  else location.hash = '#/';
+function cfLeave(viaBack = false) {
+  if (CF.level !== 'albums' || CF.morph) return;
+  const go = () => {
+    if ((prevPage === '' || viaBack) && history.length > 1) history.back();
+    else location.hash = '#/';
+  };
+  const m = SHELF.morph;
+  if (m?.key === CF.key && m.h && CF.focused < 0 && $('#cf-stage')) {
+    SHELF.enter = { key: m.key, shown: CF.els.map((el) => el.style.display !== 'none') };
+    $('.cf-info')?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
+    cfMorph('out', m).then(go);
+  } else go();
 }
 
 // Eine Ebene zurück (ins Dunkle tippen, Escape)
@@ -797,7 +940,7 @@ let cfDrag = null;
 const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, [data-action], a, input, select, textarea, label');
 document.addEventListener('pointerdown', (e) => {
   const stage = $('#cf-stage');
-  if (!stage || jewel.bookletOpen() || cfIgnore(e.target)) return;
+  if (!stage || CF.morph || jewel.bookletOpen() || cfIgnore(e.target)) return;
   if (CF.focused < 0 && !stage.contains(e.target)) { // Übersicht: neben der Bühne ins Dunkle tippen = zurück ins Regal
     cfDrag = { outside: true, x: e.clientX, y: e.clientY, cx: e.clientX, moved: false };
     return;
@@ -1137,65 +1280,7 @@ function npNowHtml() {
   </button>`;
 }
 
-function npHtml() {
-  return `<div class="np" id="np">
-    <div class="np-controls">
-      <button class="np-btn" data-action="np-prev" aria-label="Vorheriger Titel">${icon('prev', 30)}</button>
-      <button class="np-btn main" data-action="np-toggle" aria-label="Abspielen oder Pause">${icon('play', 32)}</button>
-      <button class="np-btn" data-action="np-next" aria-label="Nächster Titel">${icon('next', 30)}</button>
-    </div>
-    <div class="np-vol" hidden>
-      <span class="np-vol-ic">${icon('volLow', 18)}</span>
-      <input class="np-range" id="np-vol" type="range" min="0" max="100" step="1" value="50" style="--v:50%" aria-label="Lautstärke">
-      <span class="np-vol-ic">${icon('volHigh', 18)}</span>
-    </div>
-  </div>`;
-}
-
-// ---------- Lautstärke ----------
-// Spotify erlaubt das Regeln nur bei manchen Geräten (z. B. Lautsprecher, PC). Das iPhone selbst
-// meldet oft „geht nicht“ – dann wird der Regler einfach weggelassen.
-let npVolBusy = 0; // Zeitpunkt der letzten eigenen Änderung (damit das Nachfragen den Regler nicht zurückspringen lässt)
-let npVolTimer = 0;
-let npDeviceId = '';
-
-function npShowVolume(device) {
-  const box = $('#np .np-vol');
-  if (!box) return;
-  const ok = !!device && device.supports_volume !== false && typeof device.volume_percent === 'number';
-  box.hidden = !ok; // lässt sich die Lautstärke nicht regeln, gibt es auch keinen Regler
-  const input = $('#np-vol');
-  if (ok && Date.now() - npVolBusy > 2500) {
-    input.value = device.volume_percent;
-    input.style.setProperty('--v', `${device.volume_percent}%`);
-  }
-}
-
-async function npSendVolume(v) {
-  try {
-    await spotify.setVolume(v, npDeviceId);
-  } catch (e) {
-    if (e.status === 403 || /VOLUME/i.test(e.reason)) {
-      npShowVolume({ supports_volume: false });
-    } else if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) {
-      toast('Spotify läuft gerade nicht – spiel zuerst ein Album ab.');
-    } else toast(e.message, 'error');
-  }
-}
-
-document.addEventListener('input', (e) => {
-  if (e.target.id !== 'np-vol') return;
-  const v = Number(e.target.value);
-  e.target.style.setProperty('--v', `${v}%`);
-  npVolBusy = Date.now();
-  // beim Ziehen höchstens alle 250 ms an Spotify schicken
-  clearTimeout(npVolTimer);
-  npVolTimer = setTimeout(() => npSendVolume(v), 250);
-});
-
 function npShow(st) {
-  npDeviceId = st?.device?.id || '';
-  npShowVolume(st?.device || null);
   const t = st?.item;
   npNow = t ? {
     albumId: t.album?.id || '',
@@ -1211,8 +1296,6 @@ function npShow(st) {
 
 function npSetPlaying(playing) {
   npPlaying = playing;
-  const b = $('#np [data-action="np-toggle"]');
-  if (b) b.innerHTML = icon(playing ? 'pause' : 'play', 32);
   document.body.classList.toggle('np-paused', !playing);
 }
 
@@ -1285,22 +1368,11 @@ function npGoto() {
 // Alle 5 Sekunden nachsehen, solange der Blätter-Bildschirm sichtbar ist
 async function npTick() {
   clearTimeout(npTimer);
-  if (!spConnected || !$('#np')) return;
+  if (!spConnected || !$('.np-now')) return; // nur solange „Läuft gerade“ oben zu sehen ist
   if (document.visibilityState === 'visible') {
     try { npShow(await spotify.playerState()); } catch { npShow(null); }
   }
   npTimer = setTimeout(npTick, 5000);
-}
-
-async function npCommand(fn, playingAfter) {
-  try {
-    await fn();
-    if (playingAfter !== undefined) npSetPlaying(playingAfter);
-  } catch (e) {
-    if (e.reason === 'NO_ACTIVE_DEVICE' || e.status === 404) toast('Spotify läuft gerade nicht – spiel zuerst ein Album ab.');
-    else toast(e.message, 'error');
-  }
-  setTimeout(npTick, 700);
 }
 
 async function spotifyPlay({ artist, title, sid, track = '', pos = -1 }) {
@@ -2336,6 +2408,7 @@ const actions = {
     refreshCurrent();
   },
   back: () => {
+    if (route()[0] === 'flow' && $('#cf-stage')) { cfLeave(true); return; } // mit Übergang zurück
     if (history.length > 1) history.back();
     else location.hash = '#/';
   },
@@ -2384,11 +2457,7 @@ const actions = {
   'preload-all': () => { if (PL.running) { PL.stop = true; plUpdate(); } else plStart(); },
 
   // Regal: Reihe antippen -> Interpret im Cover Flow
-  'shelf-open': (el) => {
-    SHELF.scroll = window.scrollY;
-    el.classList.add('go');
-    setTimeout(() => { location.hash = `#/flow/${enc(el.dataset.key)}`; }, 170);
-  },
+  'shelf-open': (el) => shelfOpen(el),
   'cf-more': (el) => {
     const x = flowAlbum(el);
     if (!x) return;
@@ -2415,9 +2484,6 @@ const actions = {
   'save-gemini': () => saveGemini(),
 
   // Mini-Player
-  'np-toggle': () => npCommand(() => (npPlaying ? spotify.pause() : spotify.resume()), !npPlaying),
-  'np-next': () => npCommand(() => spotify.next()),
-  'np-prev': () => npCommand(() => spotify.previous()),
   'np-goto': () => npGoto(),
 
   // Spotify

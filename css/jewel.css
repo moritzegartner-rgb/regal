@@ -291,24 +291,25 @@ body.jc-clear .ribz { background: repeating-linear-gradient(90deg, rgba(255,255,
 .bv.flying .bv-load { opacity: 0; transition: none; }
 /* aufgeschlagenes Buch: links und rechts je eine Seite, Blätter drehen sich um den Buchrücken in der Mitte */
 .bv-book { position: relative; --par: 1; width: min(96vw, calc(62vh * 2 * var(--par))); perspective: 2200px;
-  transition: transform .7s cubic-bezier(.3,.8,.3,1); }
+  transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3,.8,.3,1); }
 .bv-book.still, .bv-book.still::before { transition: none; } /* beim Öffnen sofort an Ort und Stelle */
 /* EIN Schatten unter dem ganzen Buch (statt einem pro Seite – die haben sich beim Blättern aufaddiert) */
 .bv-book::before { content: ""; position: absolute; top: 0; bottom: 0; left: var(--shl, 50%); right: var(--shr, 0%); z-index: 0;
   box-shadow: 0 16px 44px rgba(0,0,0,.7); transition: left .7s cubic-bezier(.3,.8,.3,1), right .7s cubic-bezier(.3,.8,.3,1); }
 .leaf { position: absolute; left: 50%; top: 0; width: 50%; height: 100%; transform-origin: 0 50%; transform-style: preserve-3d;
   transition: transform .85s cubic-bezier(.35,.7,.3,1); }
-.leaf.turned { transform: rotateY(-180deg); }
-.leaf.turning { z-index: 500 !important; }
+/* Lage (gestapelt, umgeblättert) setzt das Skript direkt am Blatt */
 .pg { position: absolute; inset: 0; background: #e9e5dc 50% 50% / cover no-repeat; -webkit-backface-visibility: hidden; backface-visibility: hidden; cursor: pointer; }
 .pg.b { transform: rotateY(180deg); }
 /* Falz: auf jeder Seite gleich stark, immer zum Buchrücken hin (rechte Seite links, linke Seite rechts) */
 .pg::after { content: ""; position: absolute; inset: 0; pointer-events: none; }
 .pg.f::after { background: linear-gradient(90deg, rgba(0,0,0,.26), rgba(0,0,0,.08) 5%, rgba(0,0,0,0) 13%); }
 .pg.b::after { background: linear-gradient(270deg, rgba(0,0,0,.26), rgba(0,0,0,.08) 5%, rgba(0,0,0,0) 13%); }
-/* während das Blatt sich dreht, wird es kurz dunkler (es neigt sich vom Licht weg) */
-.pg::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1; background: rgba(0,0,0,.4); opacity: 0; }
-.leaf.turning .pg::before { animation: turnshade .85s ease-in-out; }
+/* während das Blatt sich dreht, wird es kurz dunkler (es neigt sich vom Licht weg) – eigene Flächen direkt über den Seiten */
+.shd { position: absolute; inset: 0; pointer-events: none; background: rgba(0,0,0,.4); opacity: 0;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden; transform: translateZ(.1px); }
+.shd.b { transform: rotateY(180deg) translateZ(.1px); }
+.leaf.turning .shd { animation: turnshade .85s ease-in-out; }
 @keyframes turnshade { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
 
 /* ---------- Ergänzungen für die App ---------- */

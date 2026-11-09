@@ -270,6 +270,9 @@ async function lookup(rgid) {
   return res;
 }
 
+// schon gefundene Fotos sofort (ohne Warten) – undefined = noch nicht nachgesehen
+export const scanCached = (rgid) => scanMem.get(rgid);
+
 export async function findScan(rgid) {
   if (!rgid) return null;
   if (scanMem.has(rgid)) return scanMem.get(rgid);
@@ -398,6 +401,19 @@ function bookPages(sc, front) {
 let bv = null, bvZoom = null, bvBook = null, bvPages = [], bvLeaf = 0, bvTok = 0, bvSrc = null, bvGray = false;
 const Z = { s: 1, x: 0, y: 0 }; // Zoom: Faktor und Verschiebung
 const FLY_MS = 800;
+// ein Blatt: Vorder- und Rückseite, dazu je eine Schattenfläche fürs Umblättern (eigene Flächen statt ::before –
+// so entsteht beim Blättern keine neue Ebene, die in Safari kurz aufblitzt)
+const LEAF = '<div class="leaf"><div class="pg f"></div><div class="pg b"></div><i class="shd f"></i><i class="shd b"></i></div>';
+const STACK = 0.4; // Abstand der gestapelten Blätter (px) – die Reihenfolge ergibt sich so aus der echten Lage
+// Seitenbild schon vor dem Umblättern entschlüsseln (sonst ist die Seite beim ersten Zeigen kurz leer)
+const decoded = new Set();
+function predecode(u) {
+  if (!u || decoded.has(u)) return;
+  decoded.add(u);
+  const im = new Image();
+  im.src = u;
+  im.decode?.().catch(() => decoded.delete(u));
+}
 
 function bvInit() {
   if (bv) return;
@@ -431,8 +447,9 @@ function zSharpen() {
     if (!el || !page?.o || el.dataset.hi) continue;
     el.dataset.hi = '1';
     const im = new Image();
-    im.onload = () => { if (el.isConnected) el.style.backgroundImage = `url("${page.o}")`; };
     im.src = page.o;
+    (im.decode ? im.decode() : new Promise((res, rej) => { im.onload = res; im.onerror = rej; }))
+      .then(() => { if (el.isConnected) el.style.backgroundImage = `url("${page.o}")`; }).catch(() => {});
   }
 }
 
@@ -552,7 +569,7 @@ export async function openBooklet(sc, front, gray = false, src = null) {
   const par = Math.min(1.4, Math.max(0.7, ratio)); // Seitenformat (CD-Booklets sind fast quadratisch)
   bvBook.style.setProperty('--par', par.toFixed(3));
   bvBook.style.aspectRatio = String(2 * par);
-  bvBook.innerHTML = Array.from({ length: Math.ceil(pages.length / 2) }, () => '<div class="leaf"><div class="pg f"></div><div class="pg b"></div></div>').join('');
+  bvBook.innerHTML = Array.from({ length: Math.ceil(pages.length / 2) }, () => LEAF).join('');
   bvBook.classList.add('still'); // ohne Übergang – sonst gleitet das Buch noch, während der Flug sein Ziel misst
   bvShow();
   bvBook.getBoundingClientRect();
@@ -605,6 +622,7 @@ export async function closeBooklet() {
 
 function pageStyle(el, page) {
   if (!page) { el.style.backgroundImage = 'none'; return; }
+  predecode(page.u);
   el.style.backgroundImage = `url("${page.u}")`;
   el.style.backgroundSize = page.part === 'full' ? 'cover' : '200% 100%';
   el.style.backgroundPosition = page.part === 'l' ? '0% 50%' : page.part === 'r' ? '100% 50%' : '50% 50%';
@@ -614,8 +632,11 @@ function bvShow() {
   leaves.forEach((lf, j) => {
     const turned = j < bvLeaf;
     lf.classList.toggle('turned', turned);
-    lf.style.zIndex = String(turned ? 100 + j : 100 - j);
-    if (Math.abs(j - bvLeaf) <= 2 && !lf.dataset.on) { // nur Blätter in der Nähe laden (spart Speicher)
+    // gestapelt wie echtes Papier: oben liegt jeweils das Blatt, das man als Nächstes umblättert
+    // (gleiche Bausteine in beiden Lagen, damit der Browser sauber zwischen ihnen dreht)
+    const h = (turned ? j + 1 : n - j) * STACK;
+    lf.style.transform = turned ? `rotateY(-180deg) translateZ(${-h}px)` : `rotateY(0deg) translateZ(${h}px)`;
+    if (Math.abs(j - bvLeaf) <= 3 && !lf.dataset.on) { // nur Blätter in der Nähe laden (spart Speicher)
       lf.dataset.on = '1';
       pageStyle(lf.children[0], bvPages[2 * j]);
       pageStyle(lf.children[1], bvPages[2 * j + 1]);

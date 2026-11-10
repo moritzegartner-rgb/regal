@@ -8,7 +8,7 @@ import * as spotify from './spotify.js';
 import * as jewel from './jewel.js';
 import { $, esc, norm, hue, uid, icon, toast, openSheet, closeSheet, prepareImage, sleep } from './util.js';
 
-const APP_VERSION = '2.12.0';
+const APP_VERSION = '2.13.0';
 const DAY = 864e5;
 const collator = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
 const sortName = (s) => String(s || '').replace(/^(the|die|der|das)\s+/i, '');
@@ -252,6 +252,7 @@ function render() {
   if (key !== lastPage) { window.scrollTo(0, 0); prevPage = lastPage; lastPage = key; }
   const [page, id] = r;
   if (SHELF.layer && !((page === 'flow' && SHELF.layer.dir === 'in') || (page === '' && SHELF.layer.dir === 'out'))) trCleanup();
+  if (CF.sw && (page !== 'flow' || CF.sw.used)) cfSwEnd(CF.sw, false); // Wechsel zum Nachbarn unterbrochen
   document.body.classList.toggle('flow-page', page === 'flow');
   document.body.classList.toggle('shelf-page', page === '');
   if (page === '') renderShelf();
@@ -323,13 +324,16 @@ function shelfApplyScan(inl, sc) {
   inl.parentElement.classList.add('scan');
 }
 
-// Übergang Regal ↔ Cover Flow – nahtlos:
-// Die Seite, die man verlässt, wandert unverändert in eine Ebene (über bzw. hinter der neuen Seite). Die neue Seite wird
-// aufgebaut, während das Bild still steht, erst dann beginnt die Bewegung. Die CDs starten bzw. enden flach genau auf
-// ihren Rücken im Regal; der Wechsel zwischen Regal-Rücken und 3D-Hülle wird pro CD weich überblendet.
-const TR = { inD: 820, outD: 620, stag: 30, xfade: 170 };
+// Übergang Regal ↔ Cover Flow – nahtlos und mit den CDs aus dem Regal:
+// Die Seite, die man verlässt, wandert unverändert in eine Ebene (hin: HINTER den Cover Flow, zurück: DARÜBER), die neue
+// Seite wird aufgebaut, während das Bild still steht – erst dann beginnt die Bewegung. Jede fliegende Hülle trägt ihren
+// Rücken aus dem Regal (genaue Kopie, gleich groß, an derselben Stelle): am Anfang bzw. Ende liegt sie flach darauf und
+// sieht exakt so aus wie die CD im Regal, der Rücken selbst ist in dem Moment weg – es gibt nie zwei CDs gleichzeitig.
+// Während des Flugs liegen die Hüllen über allem (Kopfzeile, Titel, Leiste) und werden nicht von der Bühne abgeschnitten.
+const TR = { inD: 820, outD: 620, stag: 30 };
 const trDelay = (i, cur) => Math.min(6, Math.abs(i - cur)) * TR.stag;
 const nextFrames = (n = 2) => new Promise((res) => { const f = () => (--n > 0 ? requestAnimationFrame(f) : res()); requestAnimationFrame(f); });
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 function trLayer(kind, els) {
   const layer = document.createElement('div');
@@ -357,20 +361,23 @@ function shelfOpen(row) {
   const shelf = $('#shelf');
   if (SHELF.layer || !shelf) return;
   SHELF.scroll = window.scrollY;
-  SHELF.layer = { el: trLayer('over', [shelf, $('#view > .navbar')]), key: row.dataset.key, row, dir: 'in' };
+  SHELF.layer = { el: trLayer('under', [shelf, $('#view > .navbar')]), key: row.dataset.key, row, dir: 'in' };
   location.hash = `#/flow/${enc(row.dataset.key)}`;
 }
 async function trIn(L) {
   const { row } = L;
+  const spines = [...row.querySelectorAll('.sh-sp')];
   const pts = spineCenters(row);
-  const h = row.querySelector('.sh-sp')?.getBoundingClientRect().height || 0;
-  const news = [$('#view > .navbar'), $('.cf-info'), $('.cf-extra'), ...document.querySelectorAll('.cf-nb')].filter(Boolean);
-  if (!h) { trCleanup(); return; }
+  const h = spines[0]?.getBoundingClientRect().height || 0;
+  if (!h || !$('#cf-stage')) { trCleanup(); return; }
+  const nav = $('#view > .navbar');
+  const late = [$('.cf-info'), $('.cf-extra'), ...document.querySelectorAll('.cf-nb')].filter(Boolean);
+  const news = [nav, ...late].filter(Boolean);
   news.forEach((el) => { el.style.opacity = '0'; }); // Anfangsbild = Regal
-  cfMorphSet(pts, h, 0);
-  await nextFrames(2); // Cover Flow ist jetzt gezeichnet (unter dem Regal) – erst jetzt bewegen
+  cfMorphSet(pts, h, 0, spines); // die Hüllen liegen jetzt flach und deckungsgleich auf ihren Rücken
+  const flies = spines.map((_, k) => !!CF.els[k]?._gh);
+  await nextFrames(2); // Cover Flow ist jetzt gezeichnet – erst jetzt bewegen
   if (SHELF.layer !== L || CF.morph?.pts !== pts) { news.forEach((el) => { el.style.opacity = ''; }); return; }
-  const cur = Math.round(CF.pos);
   const top = row.getBoundingClientRect().top;
   L.el.querySelectorAll('.sh-row').forEach((r) => {
     if (r === row) return;
@@ -381,13 +388,13 @@ async function trIn(L) {
   fadeTo(row.querySelector('.sh-head'), 0, { duration: 240 });
   fadeTo(row.querySelector('.sh-floor'), 0, { duration: 320 });
   fadeTo(L.el.querySelector('.navbar'), 0, { duration: 300 });
-  row.querySelectorAll('.sh-sp').forEach((sp, k) => {
-    const flies = pts[k] && CF.els[k] && CF.els[k].style.display !== 'none';
-    fadeTo(sp, 0, flies ? { duration: TR.xfade, delay: trDelay(k, cur) + 30 } : { duration: 320 });
-  });
-  news.forEach((el) => { fadeTo(el, 1, { duration: 360, delay: el.classList.contains('navbar') ? 160 : 520 }); el.style.opacity = ''; });
+  spines.forEach((sp, k) => { if (!flies[k]) fadeTo(sp, 0, { duration: 320 }); });
+  if (nav) { fadeTo(nav, 1, { duration: 360, delay: 160 }); nav.style.opacity = ''; }
   await cfMorphRun('in');
   if (SHELF.layer === L) trCleanup();
+  // Titel, Leiste und Nachbarn erst, wenn alle Hüllen gelandet sind – nichts legt sich über eine fliegende CD
+  late.forEach((el) => { fadeTo(el, 1, { duration: 320 }); el.style.opacity = ''; });
+  cfReflow();
 }
 
 // Cover Flow → Regal
@@ -400,15 +407,15 @@ async function trOut(L, rows) {
   const tr = target.getBoundingClientRect();
   if (tr.top < 70 || tr.bottom > window.innerHeight - 20) window.scrollTo(0, Math.max(0, window.scrollY + tr.top - window.innerHeight * 0.35));
   const spines = [...target.querySelectorAll('.sh-sp')];
-  all.forEach((el) => { el.style.opacity = '0'; }); // Anfangsbild = Cover Flow (liegt dahinter)
+  all.forEach((el) => { el.style.opacity = '0'; }); // Anfangsbild = Cover Flow (liegt darüber)
   const pts = spineCenters(target);
   const h = spines[0]?.getBoundingClientRect().height || 0;
   if (!h) { all.forEach((el) => { el.style.opacity = ''; }); trCleanup(); return; }
-  cfMorphSet(pts, h, 1);
+  cfMorphSet(pts, h, 1, spines); // Rücken der fliegenden CDs erscheinen erst, wenn ihre Hülle genau darauf gelandet ist
+  const flies = spines.map((_, k) => !!CF.els[k]?._gh);
   await nextFrames(2);
-  if (SHELF.layer !== L) { all.forEach((el) => { el.style.opacity = ''; }); return; }
-  const cur = Math.round(CF.pos);
-  L.el.querySelectorAll('.navbar, .cf-info, .cf-extra, .cf-nb').forEach((el) => fadeTo(el, 0, { duration: 260 }));
+  if (SHELF.layer !== L) { [...all, ...spines].forEach((el) => { el.style.opacity = ''; }); return; }
+  L.el.querySelectorAll('.navbar, .cf-info, .cf-extra, .cf-nb').forEach((el) => fadeTo(el, 0, { duration: 240 }));
   const ty = target.getBoundingClientRect().top;
   rows.forEach((r) => {
     if (r === target) return;
@@ -419,22 +426,34 @@ async function trOut(L, rows) {
   fadeTo(nav, 1, { duration: 320, delay: 120 });
   fadeTo(target.querySelector('.sh-head'), 1, { duration: 320, delay: TR.outD * 0.55 });
   fadeTo(target.querySelector('.sh-floor'), 1, { duration: 320, delay: TR.outD * 0.5 });
-  spines.forEach((sp, k) => {
-    const flies = pts[k] && CF.els[k] && CF.els[k].style.display !== 'none';
-    // landende CD: der Regal-Rücken blendet genau dann ein, wenn sie ankommt
-    fadeTo(sp, 1, flies ? { duration: TR.xfade, delay: trDelay(k, cur) + TR.outD - TR.xfade } : { duration: 320, delay: TR.outD * 0.5 });
-  });
+  spines.forEach((sp, k) => { if (!flies[k]) fadeTo(sp, 1, { duration: 320, delay: TR.outD * 0.5 }); });
   all.forEach((el) => { el.style.opacity = ''; });
   await cfMorphRun('out');
+  spines.forEach((sp) => { sp.style.opacity = ''; });
   if (SHELF.layer === L) trCleanup();
+  CF.morph = null;
 }
 
-// k pro Hülle: 0 = flach auf dem Rücken im Regal, 1 = Platz im Cover Flow
-function cfMorphSet(pts, h, k) {
+// k pro Hülle: 0 = flach auf dem Rücken im Regal, 1 = Platz im Cover Flow.
+// Jede Hülle bekommt eine Kopie ihres Regal-Rückens auf die Seite, die beim Start zur Kamera zeigt.
+function cfMorphSet(pts, h, k, spines) {
   const stage = $('#cf-stage');
   if (!stage) return;
+  stage.classList.add('tr-free'); // Hüllen dürfen aus der Bühne heraus und liegen über allem
   const r = stage.getBoundingClientRect();
-  CF.morph = { tok: {}, pts, h, bx: r.left + r.width / 2, by: r.top + r.height * 0.42, ks: CF.els.map(() => k) };
+  CF.morph = { pts, h, spines, bx: r.left + r.width / 2, by: r.top + r.height * 0.42, ks: CF.els.map(() => k) };
+  CF.els.forEach((el, i) => {
+    const sp = spines[i];
+    if (!sp || !pts[i] || !el.dataset.built || Math.abs(i - CF.pos) > CF_WINDOW + 0.5) return;
+    const w0 = sp.getBoundingClientRect().width;
+    const g = sp.cloneNode(true);
+    g.classList.add('cf-ghost');
+    g.removeAttribute('data-k');
+    g.style.cssText = `left:${(-w0 / 2).toFixed(2)}px;top:${(-h / 2).toFixed(2)}px;width:${w0}px;height:${h}px;--spW:${w0}px;--spH:${h}px;opacity:0`;
+    g._side = i - CF.pos > 0.001 ? 1 : -1; // rechts zeigt der rechte Rücken nach vorn, sonst der linke
+    el.appendChild(g); // hinter der Hülle im DOM – firstElementChild bleibt die Hülle
+    el._gh = g;
+  });
   cfLayout();
 }
 function cfMorphRun(dir) {
@@ -450,17 +469,28 @@ function cfMorphRun(dir) {
       const t = now - t0;
       let done = true;
       m.ks = CF.els.map((_, i) => {
-        const p = Math.max(0, Math.min(1, (t - trDelay(i, cur)) / D));
+        const p = clamp01((t - trDelay(i, cur)) / D);
         if (p < 1) done = false;
         return dir === 'in' ? ease(p) : 1 - ease(p);
       });
       cfLayout();
       if (!done) { requestAnimationFrame(step); return; }
-      if (dir === 'in') { CF.morph = null; cfLayout(); }
+      if (dir === 'in') cfMorphClear();
       res();
     };
     requestAnimationFrame(step);
   });
+}
+// Übergang fertig: Kopien der Rücken weg, Hüllen wieder normal, Bühne schneidet wieder ab
+function cfMorphClear() {
+  CF.morph = null;
+  for (const el of CF.els) {
+    if (el._gh) { el._gh.remove(); el._gh = null; }
+    const jc = el.firstElementChild;
+    if (jc?._mt) { jc._mt = ''; jc._mv = ''; jc.style.transform = ''; jc.style.transition = ''; jc.style.visibility = ''; }
+  }
+  $('#cf-stage')?.classList.remove('tr-free');
+  cfLayout();
 }
 
 // Spiegelung erst einblenden, wenn die CD aus dem Regal heraus ist (im Regal gibt es keine)
@@ -629,9 +659,11 @@ function renderFlow(level, key = '') {
   if (level === 'albums' && !g) { location.replace('#/'); return; }
   const entries = level === 'artists' ? artistEntries() : albumEntries(g);
   cancelAnimationFrame(CF.openRaf);
-  const switchIn = CF.switchIn || 0;
-  CF.fromShelf = switchIn ? CF.fromShelf : prevPage === ''; // kam aus dem Regal (auch nach Wechsel zum Nachbarn)
-  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1, morph: null, switchIn: 0 });
+  const sw = CF.sw && !CF.sw.used && level === 'albums' ? CF.sw : null; // Wechsel vom Nachbarn im Regal
+  const L = SHELF.layer;
+  const fromShelf = L?.dir === 'in' && !L.used && L.key === key && level === 'albums'; // gerade im Regal angetippt
+  CF.fromShelf = sw ? CF.fromShelf : prevPage === ''; // kam aus dem Regal (auch nach Wechsel zum Nachbarn)
+  Object.assign(CF, { level, key, entries, shown: -1, focused: -1, flipDeg: 0, flipped: -1, opened: -1, openK: 0, pending: -1, morph: null, reflow: '' });
   if (g) state.current = { kind: 'flow', g };
   jewel.initJewel();
 
@@ -681,30 +713,28 @@ function renderFlow(level, key = '') {
     ${nextG ? `<button class="cf-nb down" data-action="cf-artist" data-key="${esc(nextG.key)}" data-dir="1"><span>${esc(nextG.name)}</span>${icon('chevron', 13, 'cf-nb-ic')}</button>` : ''}
     </div>`;
   if (spConnected) npTick();
-  CF.els = [...document.querySelectorAll('.cf-item')];
-  // dort weitermachen, wo man zuletzt war
+  CF.els = [...view().querySelectorAll('.cf-item')]; // nur die neue Seite (beim Wechsel liegt die alte noch daneben)
+  // aus dem Regal oder vom Nachbarn: immer beim ersten Album – sonst dort weitermachen, wo man zuletzt war
   const memKey = `${level}:${key}`;
-  const start = Math.max(0, entries.findIndex((e) => e.key === CF.mem[memKey]));
+  const start = fromShelf || sw ? 0 : Math.max(0, entries.findIndex((e) => e.key === CF.mem[memKey]));
   CF.pos = start;
   CF.target = start;
   cfLayout();
   cfSettle();
   // aus dem Regal gekommen: die CDs drehen sich aus ihren Rücken heraus
-  const L = SHELF.layer;
   if (L?.dir === 'in' && !L.used) {
     L.used = true;
-    if (L.key === key && level === 'albums') trIn(L); else trCleanup();
+    if (fromShelf) trIn(L); else trCleanup();
   }
-  // vom Nachbarn gewechselt: von oben bzw. unten hereingleiten
-  if (switchIn) {
-    $('.cf-page')?.animate([{ transform: `translateY(${switchIn * 110}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }],
-      { duration: 440, easing: 'cubic-bezier(.2,.8,.2,1)' });
-  }
+  // vom Nachbarn gewechselt: alte Seite gleitet hinaus, neue von unten bzw. oben herein (wie eine Seite weiterblättern)
+  if (sw) { sw.used = true; cfPager(sw); }
 
   // Diskografie fehlt noch? Laden und fehlende Alben grau dazustellen
   if (level === 'albums' && g.mbid && !discoMem.get(g.mbid)) {
     getDisco(g.mbid).then(() => {
-      if (route()[0] === 'flow' && route()[1] === key && CF.focused < 0) renderFlow('albums', key);
+      if (route()[0] !== 'flow' || route()[1] !== key || CF.focused >= 0) return;
+      if (CF.morph || CF.sw) { CF.reflow = key; return; } // nicht mitten in einer Animation neu aufbauen
+      renderFlow('albums', key);
     }).catch(() => {});
   }
 }
@@ -731,7 +761,9 @@ function cfLayout() {
       return;
     }
     cfBuild(i); // schon mal bauen, auch wenn sie noch knapp außerhalb liegt
-    if (ad > adVis && i !== CF.focused) {
+    const mo = CF.morph, gh = mo ? el._gh : null;
+    const mk = gh ? mo.ks[i] : 1; // < 1: fliegt gerade zwischen Regal und Cover Flow
+    if (ad > adVis && i !== CF.focused && mk >= 1) {
       if (el.style.display !== 'none') el.style.display = 'none';
       return;
     }
@@ -747,16 +779,31 @@ function cfLayout() {
     const vis = CF.openK >= 1 && i !== cur ? 'hidden' : '';
     if (el._vis !== vis) { el._vis = vis; el.style.visibility = vis; }
     let tf = `translate3d(${x.toFixed(1)}px,0,${z.toFixed(1)}px) rotateY(${(-sg * e * 68).toFixed(2)}deg)`;
-    const mo = CF.morph, mp = mo?.pts[i];
-    if (mp && mo.ks[i] < 1) { // Übergang: vom Rücken im Regal (gleiche Stelle, gleiche Größe) zum Platz im Cover Flow
-      const k = mo.ks[i], k0 = mo.h / s, L = (a, b) => a + (b - a) * k;
-      const r0 = d > 0.001 ? -90 : 90; // rechts zeigt der rechte Rücken nach vorn, sonst der linke
+    if (mk < 1) { // Übergang: vom Rücken im Regal (gleiche Stelle, gleiche Größe) zum Platz im Cover Flow
+      const mp = mo.pts[i], k = mk, k0 = mo.h / s, L = (a, b) => a + (b - a) * k;
+      const side = gh._side; // diese Seite der Hülle zeigt am Anfang zur Kamera
       const sc = L(k0, 1);
-      // am Anfang ganz flach (nur der Rücken, keine schrägen Seiten) – die Tiefe wächst beim Herausdrehen
+      // am Anfang liegt der Regal-Rücken genau auf Bildschirmtiefe 0 (keine Perspektiv-Vergrößerung = pixelgenau)
+      const gz = (w / 2) * 0.002 * k0 + 0.5;
+      tf = `translate3d(${L(mp.x - mo.bx, x).toFixed(2)}px,${L(mp.y - mo.by, 0).toFixed(2)}px,${L(-gz, z).toFixed(3)}px) `
+        + `rotateY(${L(-side * 90, -sg * e * 68).toFixed(2)}deg)`;
+      // am Anfang ganz flach (nur der Rücken) – die Tiefe wächst beim Herausdrehen. Größe und Stauchung bekommt nur die
+      // Hülle; der Regal-Rücken liegt einen halben Pixel davor, ist am Anfang 1:1 (gestochen scharf wie im Regal) und
+      // dreht sich mit der Hülle heraus – dann übernimmt der echte Rücken der Hülle
       const sx = Math.max(0.002, Math.min(1, k * 2.4));
-      tf = `translate3d(${L(mp.x - mo.bx, x).toFixed(1)}px,${L(mp.y - mo.by, 0).toFixed(1)}px,${L(0, z).toFixed(1)}px) `
-        + `rotateY(${L(r0, -sg * e * 68).toFixed(2)}deg) scale3d(${(sc * sx).toFixed(4)},${sc.toFixed(4)},${sc.toFixed(4)})`;
-      cfMirror(el, Math.max(0, Math.min(1, (k - 0.35) / 0.5)).toFixed(2));
+      const jc = el.firstElementChild, jt = `scale3d(${(sc * sx).toFixed(4)},${sc.toFixed(4)},${sc.toFixed(4)})`;
+      if (jc && jc._mt !== jt) { jc._mt = jt; jc.style.transition = 'none'; jc.style.transform = jt; }
+      const gt = `translate3d(${(side * (w / 2 * sx * sc + 0.5)).toFixed(3)}px,0,0) rotateY(${side * 90}deg) scale(${(sc / k0).toFixed(4)})`;
+      if (gh._tf !== gt) { gh._tf = gt; gh.style.transform = gt; }
+      // ganz am Anfang/Ende (noch keinen Pixel bewegt) ist die echte CD im Regal zu sehen, die Hülle wartet unsichtbar –
+      // erstes und letztes Bild sind so auf jedem Gerät exakt das Regal. Die Übergabe überlappt um ein Bild (nie leer).
+      const on = k >= 0.002, spOn = k < 0.004, sp = mo.spines[i];
+      if (sp && sp._on !== spOn) { sp._on = spOn; sp.style.opacity = spOn ? '' : '0'; }
+      const jv = on ? '' : 'hidden';
+      if (jc && jc._mv !== jv) { jc._mv = jv; jc.style.visibility = jv; }
+      const go = on ? (1 - clamp01((k - 0.08) / 0.32)).toFixed(2) : '0';
+      if (gh._op !== go) { gh._op = go; gh.style.opacity = go; }
+      cfMirror(el, clamp01((k - 0.55) / 0.35).toFixed(2)); // Spiegelung erst kurz vor dem Ziel (im Regal gibt es keine)
     } else if (el._mo != null) cfMirror(el, '');
     if (el._tf !== tf) { el._tf = tf; el.style.transform = tf; }
     const zi = 1000 - Math.round(ad * 20);
@@ -992,42 +1039,86 @@ async function spotifyAlbumId(artist, title, rgid) {
 
 // Cover Flow verlassen: zurück ins Regal
 function cfLeave(viaBack = false) {
-  if (CF.level !== 'albums' || CF.morph || SHELF.layer || CF.switching) return;
+  if (CF.level !== 'albums' || CF.morph || SHELF.layer || CF.sw) return;
   const page = $('.cf-page');
-  // Cover Flow wandert unverändert in eine Ebene HINTER die Seite; darüber wird das Regal (erst unsichtbar) aufgebaut
-  if (CF.focused < 0 && page && $('#cf-stage')) SHELF.layer = { el: trLayer('under', [page, $('#view > .navbar')]), key: CF.key, dir: 'out' };
+  // Cover Flow wandert unverändert in eine Ebene ÜBER die Seite; darunter wird das Regal (erst unsichtbar) aufgebaut
+  if (CF.focused < 0 && page && $('#cf-stage')) SHELF.layer = { el: trLayer('over', [page, $('#view > .navbar')]), key: CF.key, dir: 'out' };
   if ((CF.fromShelf || viaBack) && history.length > 1) history.back();
   else location.hash = '#/';
 }
 
-// Zum Nachbarn im Regal wechseln (nach oben wischen = nächster, nach unten = vorheriger)
-function cfSwitchArtist(key, dir) {
-  const page = $('.cf-page');
-  if (!page || !key || CF.morph || SHELF.layer || CF.switching || CF.focused >= 0) return;
-  CF.switching = true;
-  const a = page.animate([{ transform: page.style.transform || 'none', opacity: page.style.opacity || 1 },
-    { transform: `translateY(${-dir * 110}px)`, opacity: 0 }], { duration: 230, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
-  const go = () => { CF.switching = false; CF.switchIn = dir; location.replace(`#/flow/${enc(key)}`); };
-  a.finished.then(go, go);
-}
-// Finger zieht die Seite nach oben/unten (ohne Nachbarn in der Richtung nur ein wenig)
+// ---------- Zum Nachbarn im Regal wechseln: Finger nach oben = nächster (steht im Regal darunter), nach unten = vorheriger ----------
+// Die Seite folgt dem Finger. Loslassen nach genug Strecke (oder kurz geschnippt): sie gleitet weiter hinaus und die neue
+// kommt von der anderen Seite herein – wie beim Weiterblättern. Die alte Seite liegt dabei als Ebene hinter der neuen.
+const VSW = { dist: 56, flick: 0.35 }; // ab dieser Strecke (px) bzw. Geschwindigkeit (px/ms) wird gewechselt
+const cfVNeighbor = (dy) => $(dy < 0 ? '.cf-page > .cf-nb.down' : '.cf-page > .cf-nb.up');
 function cfVDrag(dy) {
   const page = $('.cf-page');
   if (!page) return;
-  const has = dy < 0 ? $('.cf-nb.down') : $('.cf-nb.up');
-  const t = dy * (has ? 0.45 : 0.12);
+  const nb = cfVNeighbor(dy);
+  const t = nb ? dy : Math.sign(dy) * 40 * (1 - Math.exp(-Math.abs(dy) / 160)); // ohne Nachbarn nur ein kleines Federn
+  page._vy = t;
   page.style.transform = `translateY(${t.toFixed(1)}px)`;
-  page.style.opacity = String(Math.max(0.4, 1 - Math.abs(t) / 260).toFixed(3));
+  // der Nachbar in Zugrichtung leuchtet auf, sobald Loslassen wechselt
+  page.querySelectorAll('.cf-nb').forEach((b) => b.classList.toggle('ready', b === nb && Math.abs(dy) > VSW.dist));
 }
-function cfVEnd(dy) {
+function cfVEnd(dy, vy) {
   const page = $('.cf-page');
   if (!page) return;
-  const nb = dy < 0 ? $('.cf-nb.down') : $('.cf-nb.up');
-  if (Math.abs(dy) > 70 && nb) { cfSwitchArtist(nb.dataset.key, dy < 0 ? 1 : -1); return; }
-  page.animate([{ transform: page.style.transform || 'none', opacity: page.style.opacity || 1 }, { transform: 'none', opacity: 1 }],
-    { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  const nb = cfVNeighbor(dy);
+  const flick = Math.abs(dy) > 14 && Math.sign(vy) === Math.sign(dy) && Math.abs(vy) > VSW.flick;
+  if (nb && (Math.abs(dy) > VSW.dist || flick)) { cfSwitchArtist(nb.dataset.key, dy < 0 ? 1 : -1, vy); return; }
+  page.querySelectorAll('.cf-nb.ready').forEach((b) => b.classList.remove('ready'));
+  const from = page.style.transform || 'none';
   page.style.transform = '';
-  page.style.opacity = '';
+  page._vy = 0;
+  page.animate([{ transform: from }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+}
+function cfSwitchArtist(key, dir, vy = 0) {
+  const page = $('.cf-page');
+  if (!page || !key || CF.morph || SHELF.layer || CF.sw || CF.focused >= 0) return;
+  const from = page._vy || 0;
+  page.getAnimations().forEach((a) => a.cancel());
+  page.style.transform = '';
+  const el = trLayer('under', [page]); // alte Seite bleibt genau so stehen (hinter der neuen)
+  page.style.transform = `translateY(${from}px)`;
+  CF.sw = { el, page, dir, from, vy, used: false };
+  location.replace(`#/flow/${enc(key)}`);
+}
+async function cfPager(sw) {
+  const np = $('.cf-page');
+  if (!np) { cfSwEnd(sw); return; }
+  const d = sw.dir;
+  // Abstand der Seiten: die neue liegt anfangs ganz außerhalb des Bildschirms
+  const S = window.innerHeight + Math.max(0, Math.abs(sw.from) - np.getBoundingClientRect().top) + 24;
+  const o0 = sw.from, o1 = -d * S, n0 = `translateY(${(o0 + d * S).toFixed(1)}px)`, dim = 0.15;
+  np.style.transform = n0;
+  np.style.opacity = String(dim);
+  await nextFrames(2); // neue Seite ist gezeichnet – erst jetzt bewegen
+  if (CF.sw !== sw) return;
+  const v = Math.abs(sw.vy || 0);
+  const opt = {
+    duration: Math.round(Math.max(320, Math.min(540, Math.abs(o1 - o0) / Math.max(1.5, v * 2.2)))),
+    easing: v > 0.2 ? 'cubic-bezier(.2,.7,.25,1)' : 'cubic-bezier(.45,0,.2,1)', // geschnippt: gleich in Fahrt
+  };
+  sw.page.animate([{ transform: `translateY(${o0}px)`, opacity: 1 }, { transform: `translateY(${o1}px)`, opacity: dim }], { ...opt, fill: 'forwards' });
+  const a = np.animate([{ transform: n0, opacity: dim }, { transform: 'none', opacity: 1 }], opt);
+  np.style.transform = '';
+  np.style.opacity = '';
+  await a.finished.catch(() => {});
+  cfSwEnd(sw);
+}
+function cfSwEnd(sw, reflow = true) {
+  sw.el.remove();
+  if (CF.sw === sw) CF.sw = null;
+  if (reflow) cfReflow();
+}
+// Diskografie kam während einer Animation an: jetzt neu aufbauen (fehlende Alben grau dazu)
+function cfReflow() {
+  const key = CF.reflow;
+  if (!key || CF.morph || CF.sw || CF.focused >= 0 || key !== CF.key || route()[0] !== 'flow' || route()[1] !== key) return;
+  CF.reflow = '';
+  renderFlow('albums', key);
 }
 
 // ---------- Diskografie-Leiste: ein Punkt pro Studioalbum (voll = deins, hohl = fehlt), mit dem Finger durchfahren ----------
@@ -1054,13 +1145,25 @@ function scrubTo(x) {
 }
 document.addEventListener('pointerdown', (e) => {
   const el = e.target.closest('.cf-scrub');
-  if (!el || CF.focused >= 0 || CF.morph) return;
-  scrub = { id: e.pointerId, dots: [...el.querySelectorAll('.cf-scrub-track i')].map((d) => { const r = d.getBoundingClientRect(); return r.left + r.width / 2; }) };
+  if (!el || CF.focused >= 0 || CF.morph || CF.sw) return;
+  scrub = { id: e.pointerId, x: e.clientX, y: e.clientY, mode: '', dots: [...el.querySelectorAll('.cf-scrub-track i')].map((d) => { const r = d.getBoundingClientRect(); return r.left + r.width / 2; }) };
   try { el.setPointerCapture(e.pointerId); } catch {}
-  scrubTo(e.clientX);
 });
-document.addEventListener('pointermove', (e) => { if (scrub && e.pointerId === scrub.id) scrubTo(e.clientX); });
-document.addEventListener('pointerup', (e) => { if (scrub && e.pointerId === scrub.id) scrub = null; });
+document.addEventListener('pointermove', (e) => {
+  if (!scrub || e.pointerId !== scrub.id) return;
+  const dx = e.clientX - scrub.x, dy = e.clientY - scrub.y;
+  if (!scrub.mode && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+    // senkrecht: wie überall auf der Seite zum Nachbarn wischen – waagerecht: durch die Alben fahren
+    if (Math.abs(dy) > Math.abs(dx) * 1.1 && CF.level === 'albums') {
+      cfDrag = { outside: true, x: scrub.x, y: scrub.y, cx: e.clientX, cy: e.clientY, moved: true, lock: 'v' };
+      scrub = null;
+      return;
+    }
+    scrub.mode = 'x';
+  }
+  if (scrub.mode) scrubTo(e.clientX);
+});
+document.addEventListener('pointerup', (e) => { if (scrub && e.pointerId === scrub.id) { if (!scrub.mode) scrubTo(e.clientX); scrub = null; } });
 document.addEventListener('pointercancel', () => { scrub = null; });
 
 // Eine Ebene zurück (ins Dunkle tippen, Escape)
@@ -1074,12 +1177,13 @@ function cfStepBack() {
 // ---------- Wischen und Tippen ----------
 // Die ganze Seite hört zu, damit „ins Dunkle tippen“ überall klappt – Knöpfe, Kopfzeile und Player ausgenommen.
 let cfDrag = null;
-const cfIgnore = (t) => !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, .cf-scrub, .tr-layer, [data-action], a, input, select, textarea, label');
+// Die Namen der Nachbarn oben/unten zählen mit: Antippen wechselt (über data-action), Wischen geht auch dort los.
+const cfIgnore = (t) => !t.closest('.cf-nb') && !!t.closest('.navbar, .np, .sheet-wrap, .bv, .toasts, .cf-scrub, .tr-layer, [data-action], a, input, select, textarea, label');
 document.addEventListener('pointerdown', (e) => {
   const stage = $('#cf-stage');
-  if (!stage || CF.morph || jewel.bookletOpen() || cfIgnore(e.target)) return;
+  if (!stage || CF.morph || CF.sw || jewel.bookletOpen() || cfIgnore(e.target)) return;
   if (CF.focused < 0 && !stage.contains(e.target)) { // Übersicht: neben der Bühne ins Dunkle tippen = zurück ins Regal
-    cfDrag = { outside: true, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, moved: false, lock: '' };
+    cfDrag = { outside: true, nb: !!e.target.closest('.cf-nb'), x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, moved: false, lock: '' };
     return;
   }
   cancelAnimationFrame(CF.raf);
@@ -1097,8 +1201,16 @@ document.addEventListener('pointermove', (e) => {
   cfDrag.cy = e.clientY;
   if (Math.abs(dx) > 6 || Math.abs(dy) > 6) cfDrag.moved = true;
   // Übersicht: Richtung festlegen – senkrecht = zum Nachbarn im Regal, waagerecht = blättern
-  if (CF.focused < 0 && !cfDrag.lock && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) cfDrag.lock = Math.abs(dy) > Math.abs(dx) * 1.2 ? 'v' : 'h';
-  if (cfDrag.lock === 'v') { if (CF.level === 'albums') cfVDrag(dy); return; }
+  // (neben der Bühne gibt es nichts zu blättern – dort zählt fast jede Bewegung als senkrecht)
+  if (CF.focused < 0 && !cfDrag.lock && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) cfDrag.lock = Math.abs(dy) > Math.abs(dx) * (cfDrag.outside ? 0.7 : 1.1) ? 'v' : 'h';
+  if (cfDrag.lock === 'v') {
+    const now = performance.now(); // Geschwindigkeit merken: kurz schnippen reicht zum Wechseln
+    if (cfDrag.lastTY) cfDrag.vy = (cfDrag.vy || 0) * 0.4 + ((e.clientY - cfDrag.lastY) / Math.max(1, now - cfDrag.lastTY)) * 0.6;
+    cfDrag.lastY = e.clientY;
+    cfDrag.lastTY = now;
+    if (CF.level === 'albums') cfVDrag(dy);
+    return;
+  }
   if (cfDrag.outside) return;
   if (CF.opened >= 0) return; // aufgeklappt: nichts verschieben
   if (CF.focused >= 0) { // ausgewählt: die Hülle folgt beim Umdrehen dem Finger
@@ -1131,8 +1243,8 @@ const cfEnd = () => {
   cfDrag = null;
   if (!$('#cf-stage')) return;
   const tap = !d.moved;
-  if (d.lock === 'v') { if (CF.level === 'albums') cfVEnd(d.cy - d.y); return; }
-  if (d.outside) { if (tap && CF.focused < 0) cfLeave(); return; }
+  if (d.lock === 'v') { if (CF.level === 'albums') cfVEnd(d.cy - d.y, performance.now() - (d.lastTY || 0) > 90 ? 0 : d.vy || 0); return; }
+  if (d.outside) { if (tap && CF.focused < 0 && !d.nb) cfLeave(); return; } // Name eines Nachbarn angetippt: der wechselt selbst
   if (CF.opened >= 0) { // aufgeklappt: Booklet antippen = lesen, CD antippen = drehen und abspielen, ins Dunkle = zuklappen
     if (tap) {
       if (d.inLid) cfOpenBooklet(CF.opened);
@@ -2601,7 +2713,7 @@ const actions = {
 
   // Regal: Reihe antippen -> Interpret im Cover Flow
   'shelf-open': (el) => shelfOpen(el),
-  'cf-artist': (el) => cfSwitchArtist(el.dataset.key, Number(el.dataset.dir) || 1),
+  'cf-artist': (el) => { if (!el.closest('.tr-layer')) cfSwitchArtist(el.dataset.key, Number(el.dataset.dir) || 1); },
   'cf-more': (el) => {
     const x = flowAlbum(el);
     if (!x) return;

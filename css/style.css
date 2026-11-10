@@ -814,12 +814,17 @@ body.shelf-page::before { display: none; } /* reines Schwarz */
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, 0) 70%, rgba(255, 255, 255, 0.12)),
     linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 18%, rgba(255, 255, 255, 0) 82%, rgba(0, 0, 0, 0.25)); }
 .sh-sp.missing { filter: grayscale(1) brightness(0.55); } /* Alben, die du nicht hast */
-/* Übergang Regal ↔ Cover Flow: die Seite, die man verlässt, liegt kurz als Ebene über (hin) bzw. hinter (zurück) der neuen */
+/* Übergang Regal ↔ Cover Flow: die Seite, die man verlässt, liegt kurz als Ebene hinter (hin) bzw. über (zurück) der neuen */
 .tr-layer { position: fixed; inset: 0; pointer-events: none; }
 .tr-layer.over { z-index: 60; }
 .tr-layer.under { z-index: -1; }
 .tr-layer > * { position: absolute !important; margin: 0 !important; }
 .tr-layer .navbar.keep-bg::before { opacity: 1; }
+/* während des Flugs: Hüllen werden nicht von der Bühne abgeschnitten und liegen über Kopfzeile, Titel und Leiste */
+.cf-stage.tr-free { overflow: visible; z-index: 40; }
+/* der Rücken aus dem Regal auf der fliegenden Hülle (Kopie, gleich groß) */
+.sh-sp.cf-ghost { position: absolute; flex: none; margin: 0; pointer-events: none; transition: none;
+  -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 
 /* Cover Flow unten: Diskografie-Leiste, oben/unten die Nachbarn im Regal */
 .cf-page { position: relative; min-height: calc(100svh - var(--safe-top) - 58px - var(--safe-bottom) - 12px); }
@@ -835,7 +840,9 @@ body.shelf-page::before { display: none; } /* reines Schwarz */
 .cf-scrub-track i.miss.on { background: #000; box-shadow: inset 0 0 0 1px #fff, 0 0 10px rgba(255, 255, 255, 0.35); }
 .cf-scrub-years { display: flex; justify-content: space-between; margin-top: 7px; font-size: 11px; letter-spacing: 0.06px; color: var(--faint); }
 .cf-nb { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 6px;
-  max-width: 70vw; padding: 6px 12px; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); transition: opacity 0.3s; }
+  max-width: 70vw; padding: 6px 12px; font-size: 13px; letter-spacing: -0.08px; color: var(--faint); transition: opacity 0.3s, color 0.15s; }
+.cf-nb.ready { color: var(--text); } /* weit genug gezogen: Loslassen wechselt */
+.cf-nb.ready .cf-nb-ic { opacity: 1; }
 .cf-nb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cf-nb.up { top: 0; flex-direction: column; gap: 0; }
 .cf-nb.down { bottom: 2px; flex-direction: column-reverse; gap: 0; }
@@ -846,7 +853,9 @@ body.shelf-page::before { display: none; } /* reines Schwarz */
 .cf-page.focus .cf-extra, .cf-page.focus .cf-nb { opacity: 0; pointer-events: none; }
 
 /* Cover Flow: nur das Blättern, keine Leiste */
-body.flow-page #view { padding-bottom: calc(var(--safe-bottom) + 12px); }
+body.flow-page #view { padding-bottom: calc(var(--safe-bottom) + 12px);
+  touch-action: none; /* überall wischen können (sonst übernimmt Safari die senkrechte Geste und bricht sie ab) */
+  overflow-x: clip; } /* fliegende Hüllen machen die Seite nicht breiter */
 body.flow-page { overscroll-behavior: none; }
 .flow-empty { padding-top: 18vh; }
 /* fehlende Alben: grau und dunkel, aber deckend (sonst scheinen Spiegelungen durch) */
